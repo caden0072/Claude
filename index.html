@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Protocol">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<title>Morning Protocol</title>
+<style>
+:root{
+  --bg:#0d0d0d; --surface:#1a1a19; --surface2:#232321;
+  --ink:#ffffff; --ink2:#c3c2b7; --muted:#898781;
+  --line:#2c2c2a; --border:rgba(255,255,255,.10);
+  --green:#0ca30c; --yellow:#fab219; --red:#d03b3b; --blue:#3987e5;
+  --radius:14px;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html{font-size:17px;}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  line-height:1.45; padding-bottom:calc(76px + env(safe-area-inset-bottom));
+  overscroll-behavior-y:none;
+}
+header.top{
+  padding:calc(10px + env(safe-area-inset-top)) 18px 8px;
+  display:flex; justify-content:space-between; align-items:baseline;
+}
+header.top h1{font-size:1.05rem; margin:0; letter-spacing:.02em;}
+header.top .date{color:var(--muted); font-size:.9rem;}
+main{padding:0 14px; max-width:560px; margin:0 auto;}
+h2{font-size:1.25rem; margin:18px 2px 10px;}
+h3{font-size:1rem; margin:14px 2px 8px; color:var(--ink2); font-weight:600;}
+p{margin:.4em 0;}
+.card{
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); padding:16px; margin:10px 0;
+}
+.hint{color:var(--muted); font-size:.85rem;}
+.small{font-size:.85rem;}
+label.f{display:block; margin:14px 0 6px; font-weight:600;}
+label.f .req{color:var(--muted); font-weight:400; font-size:.8rem;}
+input[type=number],input[type=time],input[type=text],textarea,select{
+  width:100%; background:var(--surface2); color:var(--ink);
+  border:1px solid var(--border); border-radius:12px;
+  font-size:1.15rem; padding:13px 14px; font-family:inherit;
+}
+textarea{font-size:1rem; min-height:80px;}
+textarea.code{font-family:ui-monospace,Menlo,monospace; font-size:.8rem; min-height:220px;}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--blue); outline-offset:-1px;}
+/* Segmented controls */
+.seg{display:flex; gap:8px; flex-wrap:wrap;}
+.seg button{
+  flex:1 1 0; min-height:52px; font-size:1.05rem; font-weight:600;
+  background:var(--surface2); color:var(--ink2);
+  border:1px solid var(--border); border-radius:12px; font-family:inherit;
+}
+.seg button.on{background:var(--blue); color:#fff; border-color:var(--blue);}
+/* Soreness chips */
+.chips{display:flex; gap:8px; flex-wrap:wrap;}
+.chips button{
+  min-height:48px; padding:0 16px; font-size:1rem; font-weight:600;
+  background:var(--surface2); color:var(--ink2);
+  border:1px solid var(--border); border-radius:24px; font-family:inherit;
+}
+.chips button.mild{background:#4a3a10; border-color:var(--yellow); color:var(--yellow);}
+.chips button.sig{background:#3d1414; border-color:var(--red); color:#f0a0a0;}
+/* Stepper */
+.stepper{display:flex; align-items:center; gap:14px;}
+.stepper button{
+  width:64px; height:56px; font-size:1.6rem; font-weight:700;
+  background:var(--surface2); color:var(--ink);
+  border:1px solid var(--border); border-radius:12px; font-family:inherit;
+}
+.stepper .val{font-size:1.5rem; font-weight:700; min-width:88px; text-align:center;}
+/* Buttons */
+.btn{
+  display:block; width:100%; min-height:56px; font-size:1.15rem; font-weight:700;
+  border-radius:14px; border:1px solid var(--border); font-family:inherit;
+  background:var(--surface2); color:var(--ink); margin:10px 0; padding:12px;
+}
+.btn.primary{background:var(--blue); border-color:var(--blue); color:#fff;}
+.btn.quiet{background:transparent; color:var(--ink2); min-height:48px; font-weight:600;}
+.btn.danger{color:#f0a0a0; border-color:var(--red);}
+.btn:active{opacity:.8;}
+.row2{display:flex; gap:10px;} .row2>*{flex:1;}
+/* Verdict banner */
+.verdict{border-radius:var(--radius); padding:18px 16px; margin:12px 0; border:1px solid var(--border);}
+.verdict .v{font-size:1.9rem; font-weight:800; letter-spacing:.03em;}
+.verdict.GREEN{background:rgba(12,163,12,.14);} .verdict.GREEN .v{color:var(--green);}
+.verdict.YELLOW{background:rgba(250,178,25,.12);} .verdict.YELLOW .v{color:var(--yellow);}
+.verdict.RED{background:rgba(208,59,59,.14);} .verdict.RED .v{color:#e66767;}
+.verdict p{color:var(--ink); font-size:1.05rem;}
+/* Banners */
+.banner{
+  border-radius:12px; padding:12px 14px; margin:10px 0; font-size:.95rem;
+  background:var(--surface); border:1px solid var(--yellow); color:var(--ink);
+  display:flex; align-items:center; gap:10px; justify-content:space-between;
+}
+.banner .btn{width:auto; min-height:44px; margin:0; padding:8px 14px; font-size:.95rem; flex-shrink:0;}
+/* Workout list */
+.wx{margin:0; padding:0; list-style:none;}
+.wx li{padding:10px 0; border-bottom:1px solid var(--line);}
+.wx li:last-child{border-bottom:none;}
+.wx .nm{font-weight:700; font-size:1.05rem;}
+.wx .dt{color:var(--ink2); font-size:.95rem;}
+.wx .mg{color:var(--muted); font-size:.8rem; text-transform:uppercase; letter-spacing:.05em;}
+.note{color:var(--ink2); font-size:.92rem; border-left:3px solid var(--blue); padding-left:10px; margin:10px 0;}
+.note.warn{border-left-color:var(--yellow);}
+/* Output rows */
+.out{display:flex; justify-content:space-between; gap:12px; padding:12px 0; border-bottom:1px solid var(--line); align-items:baseline;}
+.out:last-child{border-bottom:none;}
+.out .k{color:var(--ink2); flex-shrink:0;}
+.out .x{font-weight:700; text-align:right;}
+/* Stat tiles / sparklines */
+.tile{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin:10px 0;}
+.tile .tl{color:var(--ink2); font-size:.85rem;}
+.tile .big{font-size:1.6rem; font-weight:800;}
+.tile .delta{font-size:.9rem; color:var(--ink2); margin-left:8px; font-weight:600;}
+.tile svg{width:100%; height:56px; display:block; margin-top:6px;}
+.dist{display:flex; flex-direction:column; gap:8px; margin-top:8px;}
+.dist .dr{display:flex; align-items:center; gap:10px; font-size:.95rem;}
+.dist .bar{height:10px; border-radius:5px; min-width:2px;}
+.dist .dl{width:96px; color:var(--ink2);}
+.dist .dn{color:var(--ink); font-weight:700; width:20px; text-align:right;}
+/* Nav */
+nav.tabs{
+  position:fixed; bottom:0; left:0; right:0; display:flex;
+  background:var(--surface); border-top:1px solid var(--border);
+  padding:6px 6px calc(6px + env(safe-area-inset-bottom));
+}
+nav.tabs button{
+  flex:1; background:none; border:none; color:var(--muted);
+  font-size:.8rem; font-weight:700; font-family:inherit;
+  min-height:56px; border-radius:10px; letter-spacing:.02em;
+}
+nav.tabs button.on{color:var(--ink); background:var(--surface2);}
+.err{color:#e66767; font-weight:600; margin:8px 0;}
+.ok{color:var(--green); font-weight:600; margin:8px 0;}
+.divider{border:none; border-top:1px solid var(--line); margin:16px 0;}
+.summary{font-size:1.05rem; color:var(--ink);}
+.sched-row{display:flex; gap:8px; margin:8px 0; align-items:center;}
+.sched-row .dow{width:44px; color:var(--ink2); font-weight:700; flex-shrink:0;}
+.sched-row input,.sched-row select{font-size:.9rem; padding:10px;}
+.mrow{display:flex; gap:10px; margin:8px 0; align-items:center;}
+.mrow label{flex:1; color:var(--ink2);}
+.mrow input{width:110px; flex-shrink:0;}
+</style>
+</head>
+<body data-palette="#3987e5">
+<header class="top"><h1>Morning Protocol</h1><div class="date" id="hdrDate"></div></header>
+<main id="view"></main>
+<nav class="tabs" id="tabs">
+  <button data-nav="today">Today</button>
+  <button data-nav="evening">Evening</button>
+  <button data-nav="review">Review</button>
+  <button data-nav="settings">Settings</button>
+</nav>
+<script>
+"use strict";
+/* ============================================================
+   Morning Protocol — deterministic, rule-based, local-only.
+   No network calls. All data in localStorage.
+   ============================================================ */
+
+/* ---------- storage ---------- */
+const LS = { settings:"mp.settings.v1", entries:"mp.entries.v1", meta:"mp.meta.v1" };
+function load(key, fallback){ try{ const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }catch(e){ return fallback; } }
+function save(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
+
+const DEFAULT_PROGRAM = {
+  upperA: { name:"Upper A — V-taper", length:60, exercises:[
+    {name:"Weighted Pull-up",                muscle:"Back",      kind:"compound",  sets:4, reps:"6-8",   rest:2.5},
+    {name:"Standing Overhead Press",         muscle:"Shoulders", kind:"compound",  sets:4, reps:"6-8",   rest:2.5},
+    {name:"Chest-Supported Row",             muscle:"Back",      kind:"compound",  sets:3, reps:"8-10",  rest:2},
+    {name:"Incline Dumbbell Press",          muscle:"Chest",     kind:"compound",  sets:3, reps:"8-10",  rest:2},
+    {name:"Dumbbell Lateral Raise",          muscle:"Shoulders", kind:"isolation", sets:4, reps:"12-15", rest:1.5},
+    {name:"EZ-Bar Curl",                     muscle:"Arms",      kind:"isolation", sets:3, reps:"10-12", rest:1.5},
+    {name:"Overhead Cable Triceps Extension",muscle:"Arms",      kind:"isolation", sets:3, reps:"10-12", rest:1.5}
+  ]},
+  upperB: { name:"Upper B", length:60, exercises:[
+    {name:"Wide-Grip Lat Pulldown",   muscle:"Back",      kind:"compound",  sets:4, reps:"8-10",  rest:2},
+    {name:"Seated Dumbbell Press",    muscle:"Shoulders", kind:"compound",  sets:4, reps:"8-10",  rest:2.5},
+    {name:"Single-Arm Cable Row",     muscle:"Back",      kind:"compound",  sets:3, reps:"10-12", rest:2},
+    {name:"Weighted Dip",             muscle:"Chest",     kind:"compound",  sets:3, reps:"6-10",  rest:2.5},
+    {name:"Cable Lateral Raise",      muscle:"Shoulders", kind:"isolation", sets:4, reps:"12-15", rest:1.5},
+    {name:"Incline Dumbbell Curl",    muscle:"Arms",      kind:"isolation", sets:3, reps:"10-12", rest:1.5},
+    {name:"Cable Pressdown",          muscle:"Arms",      kind:"isolation", sets:3, reps:"12-15", rest:1.5}
+  ]},
+  fullUpper: { name:"Full Upper + Minimal Legs", length:75, exercises:[
+    {name:"Pull-up",                  muscle:"Back",      kind:"compound",  sets:4, reps:"8-10",  rest:2},
+    {name:"Incline Barbell Press",    muscle:"Chest",     kind:"compound",  sets:4, reps:"6-8",   rest:2.5},
+    {name:"One-Arm Dumbbell Row",     muscle:"Back",      kind:"compound",  sets:3, reps:"10-12", rest:2},
+    {name:"Arnold Press",             muscle:"Shoulders", kind:"compound",  sets:3, reps:"8-10",  rest:2},
+    {name:"Leg Press",                muscle:"Legs",      kind:"compound",  sets:2, reps:"10-12", rest:2},
+    {name:"Romanian Deadlift",        muscle:"Legs",      kind:"compound",  sets:2, reps:"8-10",  rest:2},
+    {name:"Dumbbell Lateral Raise",   muscle:"Shoulders", kind:"isolation", sets:3, reps:"12-15", rest:1.5},
+    {name:"Hammer Curl",              muscle:"Arms",      kind:"isolation", sets:2, reps:"10-12", rest:1.5},
+    {name:"Rope Pressdown",           muscle:"Arms",      kind:"isolation", sets:2, reps:"12-15", rest:1.5}
+  ]}
+};
+const DEFAULT_SCHEDULE = {
+  "0": {name:"Rest + weekly review",      type:"rest"},
+  "1": {name:"Basketball (evening)",      type:"basketball"},
+  "2": {name:"Lift — Upper A",            type:"lift",  programKey:"upperA"},
+  "3": {name:"Zone 2 cardio",             type:"zone2", minutes:45},
+  "4": {name:"Lift — Upper B",            type:"lift",  programKey:"upperB"},
+  "5": {name:"Zone 2 cardio",             type:"zone2", minutes:45},
+  "6": {name:"Lift — Full upper",         type:"lift",  programKey:"fullUpper"}
+};
+const DEFAULT_SETTINGS = { setupComplete:false, wakeTime:"05:45", schedule:DEFAULT_SCHEDULE, program:DEFAULT_PROGRAM };
+
+let settings = load(LS.settings, DEFAULT_SETTINGS);
+let entries  = load(LS.entries, {});          // { "YYYY-MM-DD": entry }
+let meta     = load(LS.meta, { lastExport:null, photoAckMonth:null, deload:null });
+
+/* ---------- date helpers ---------- */
+function dkey(d){ const p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
+function fromKey(k){ const [y,m,d]=k.split("-").map(Number); return new Date(y,m-1,d); }
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function todayKey(){ return dkey(new Date()); }
+const DOW = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const DOWS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+function fmtDate(d){ return DOW[d.getDay()]+", "+d.toLocaleDateString(undefined,{month:"short",day:"numeric"}); }
+function fmt12(hm){ // "21:45" -> "9:45 PM"
+  const [h,m]=hm.split(":").map(Number);
+  const ap = h>=12 ? "PM":"AM"; const hh = ((h+11)%12)+1;
+  return hh+":"+String(m).padStart(2,"0")+" "+ap;
+}
+function minsToHM(mins){ mins=((mins%1440)+1440)%1440; return String(Math.floor(mins/60)).padStart(2,"0")+":"+String(mins%60).padStart(2,"0"); }
+function hmToMins(hm){ const [h,m]=hm.split(":").map(Number); return h*60+m; }
+function joinAnd(a){ return a.length<=1 ? (a[0]||"") : a.slice(0,-1).join(", ")+" and "+a[a.length-1]; }
+function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+/* ---------- schedule / program access ---------- */
+function scheduleFor(date){ return settings.schedule[String(date.getDay())] || {name:"Rest", type:"rest"}; }
+function programFor(day){ return day.type==="lift" ? settings.program[day.programKey] : null; }
+function designedLength(day){
+  if(day.type==="lift"){ const p=programFor(day); return (p && p.length) || 60; }
+  if(day.type==="zone2") return day.minutes || 45;
+  return 0;
+}
+function musclesForDay(day){
+  if(day.type==="lift"){ const p=programFor(day); return p ? [...new Set(p.exercises.map(e=>e.muscle))] : []; }
+  if(day.type==="zone2" || day.type==="basketball") return ["Legs"];
+  return [];
+}
+
+/* ============================================================
+   READINESS ENGINE
+   ============================================================ */
+function computeVerdict(ci, date){
+  const day = scheduleFor(date);
+  const tue = date.getDay()===2;                  // Tuesday caution rule
+  const bbGreen = tue ? 60 : 50;
+  const sched = musclesForDay(day);
+  const sigSore = Object.keys(ci.soreness||{}).filter(m=>ci.soreness[m]==="Significant");
+  const sigToday = sigSore.filter(m=>sched.includes(m));
+
+  const red = [];
+  if(ci.hrv==="Low") red.push("HRV Low");
+  if(ci.bodyBattery < 30) red.push("Body Battery "+ci.bodyBattery);
+  if(ci.sleepHours < 5.5) red.push(ci.sleepHours.toFixed(1)+" hr sleep");
+  if(sigToday.length >= 2) red.push("significant soreness in "+joinAnd(sigToday)+" (scheduled today)");
+  if(red.length) return { verdict:"RED", reason:"RED. "+cap(joinAnd(red))+"." };
+
+  const fails = [];
+  if(ci.hrv!=="Balanced") fails.push("HRV "+ci.hrv);
+  if(ci.bodyBattery < bbGreen) fails.push("Body Battery "+ci.bodyBattery+" below "+bbGreen+(tue?" (Tuesday threshold — Monday basketball is the largest recovery cost)":""));
+  if(ci.sleepHours < 6.5) fails.push(ci.sleepHours.toFixed(1)+" hr sleep, under 6.5");
+  if(ci.energy < 3) fails.push("energy "+ci.energy+"/5");
+  if(!fails.length){
+    return { verdict:"GREEN", reason:"GREEN. HRV Balanced, Body Battery "+ci.bodyBattery+", "+ci.sleepHours.toFixed(1)+" hr sleep, energy "+ci.energy+"/5." };
+  }
+  return { verdict:"YELLOW", reason:"YELLOW. "+cap(joinAnd(fails))+"." };
+}
+
+function deloadActive(date){
+  if(!meta.deload) return false;
+  const k = dkey(date);
+  return k >= meta.deload.from && k <= meta.deload.to;
+}
+/* Effective verdict for training modification: deload caps GREEN at YELLOW protocol. */
+function effectiveVerdict(verdict, date){
+  return (verdict==="GREEN" && deloadActive(date)) ? "YELLOW" : verdict;
+}
+
+/* ============================================================
+   WORKOUT BUILDER
+   ============================================================ */
+const RED_MSG = "Training through this costs more than it builds. Recover today, train tomorrow.";
+function restMin(r){ if(typeof r==="number") return r; const m=parseFloat(r); return isNaN(m)?2:m; }
+function estMin(exs, restBump){ return Math.round(8 + exs.reduce((s,e)=>s + e.sets*(0.75 + restMin(e.rest) + restBump), 0)); }
+
+function applySorenessSwap(exs, sigSore){
+  const sore = exs.filter(e=>sigSore.includes(e.muscle));
+  if(!sore.length) return { exs, note:null };
+  const removedSets = sore.reduce((s,e)=>s+e.sets,0);
+  const kept = exs.filter(e=>!sigSore.includes(e.muscle)).map(e=>({...e}));
+  if(!kept.length) return { exs:[], note:"All scheduled muscle groups are significantly sore." };
+  let toAdd = removedSets, added = 0, targets = new Set();
+  for(let pass=0; pass<2 && toAdd>0; pass++){
+    for(const e of kept){ if(toAdd<=0) break; e.sets += 1; toAdd--; added++; targets.add(e.muscle); }
+  }
+  const soreM = [...new Set(sore.map(e=>e.muscle))];
+  const note = joinAnd(soreM)+" significantly sore. Dropped "+joinAnd(sore.map(e=>e.name))+
+    "; moved "+added+" sets to "+joinAnd([...targets])+".";
+  return { exs:kept, note };
+}
+
+function compress(exs, budget, restBump){
+  const firstCompound = new Set(); const seen = new Set();
+  exs.forEach((e,i)=>{ if(e.kind==="compound" && !seen.has(e.muscle)){ seen.add(e.muscle); firstCompound.add(i); } });
+  const kept = exs.map((e,i)=>({...e,_i:i})); const dropped = [];
+  const pick = ()=>{
+    for(let k=kept.length-1;k>=0;k--) if(kept[k].kind!=="compound") return k;      // isolation cut first
+    for(let k=kept.length-1;k>=0;k--) if(!firstCompound.has(kept[k]._i)) return k; // then secondary compounds
+    return -1;                                                                      // first compounds are preserved
+  };
+  while(estMin(kept,restBump) > budget){
+    const k = pick(); if(k<0) break;
+    dropped.push(kept[k].name); kept.splice(k,1);
+  }
+  return { kept, dropped, stillOver: estMin(kept,restBump) > budget };
+}
+
+function walkMobilityCard(headline){
+  return { heading:headline, items:[
+    {name:"Walk", detail:"20 min, easy pace", muscle:""},
+    {name:"Mobility", detail:"10 min — shoulders, hips, thoracic spine", muscle:""}
+  ], notes:[RED_MSG] };
+}
+
+function buildWorkout(ci, date, rawVerdict){
+  const day = scheduleFor(date);
+  const v = effectiveVerdict(rawVerdict, date);
+  const notes = [];
+  if(deloadActive(date) && rawVerdict==="GREEN") notes.push("Deload week active. YELLOW protocol applies regardless of verdict.");
+
+  if(day.type==="rest"){
+    return { heading:"Rest day", items:[{name:"Rest", detail:"Optional easy walk. Weekly review is in the Review tab.", muscle:""}], notes };
+  }
+
+  if(day.type==="basketball"){
+    if(rawVerdict==="RED"){ const c = walkMobilityCard("Basketball is off. Walk and mobility instead."); c.notes.push(...notes); return c; }
+    const items = [{name:"Basketball", detail:"Evening game", muscle:""}];
+    if(v==="YELLOW") notes.push("YELLOW protocol: play, but cap intensity — no extra runs, sub out when winded, skip pre-game lifting.");
+    return { heading: day.name, items, notes };
+  }
+
+  if(day.type==="zone2"){
+    if(rawVerdict==="RED"){
+      if(ci.bodyBattery < 30) return { heading:"Full rest today", items:[{name:"Rest", detail:"Body Battery "+ci.bodyBattery+". No cardio.", muscle:""}], notes:[RED_MSG, ...notes] };
+      return { heading:"20-minute walk", items:[{name:"Walk", detail:"20 min, easy pace, flat route", muscle:""}], notes:[RED_MSG, ...notes] };
+    }
+    let mins = day.minutes || 45;
+    let mode = "Zone 2 — nasal-breathing pace, HR in zone 2";
+    if(v==="YELLOW"){
+      mins = 30;
+      if(ci.energy <= 2){ mode = "Brisk walk — energy "+ci.energy+"/5, keep it conversational"; }
+      notes.push("YELLOW protocol: session reduced to 30 min.");
+    }
+    if(ci.timeAvailable < mins + 10){
+      mins = Math.max(20, ci.timeAvailable - 10);
+      notes.push("Compressed to fit the "+ci.timeAvailable+"-minute window.");
+    }
+    const c = { heading: day.name, items:[{name:mode.split(" — ")[0], detail:mins+" min. "+mode.split(" — ")[1], muscle:""}], notes };
+    c.finishBy = mins + 10;
+    return c;
+  }
+
+  /* lift day */
+  const prog = programFor(day);
+  if(!prog) return { heading:"No program assigned", items:[], notes:["Assign a program to this day in Settings."] };
+  if(rawVerdict==="RED"){ const c = walkMobilityCard("Lifting is off. Walk and mobility instead."); c.notes.push("Lifting resumes tomorrow if HRV recovers."); c.notes.push(...notes); return c; }
+
+  let exs = prog.exercises.map(e=>({...e}));
+  const sigSore = Object.keys(ci.soreness||{}).filter(m=>ci.soreness[m]==="Significant");
+  const soreToday = sigSore.filter(m=>exs.some(e=>e.muscle===m));
+
+  /* Soreness targeting: swap sore-muscle volume to non-sore groups */
+  if(soreToday.length){
+    const r = applySorenessSwap(exs, soreToday);
+    if(!r.exs.length){ const c = walkMobilityCard("Every scheduled muscle group is significantly sore."); c.notes.push(...notes); return c; }
+    exs = r.exs; if(r.note) notes.push(r.note);
+  }
+
+  /* YELLOW: cut one working set per movement, cap RPE, extend rest */
+  let restBump = 0;
+  if(v==="YELLOW"){
+    exs = exs.map(e=>({...e, sets:Math.max(1,e.sets-1)}));
+    restBump = 0.75;
+    notes.push("YELLOW protocol: one working set cut from every movement, intensity capped at RPE 7, rest extended ~45 s.");
+  }
+
+  /* Time compression */
+  if(ci.timeAvailable < designedLength(day) || estMin(exs,restBump) > ci.timeAvailable){
+    const r = compress(exs, ci.timeAvailable, restBump);
+    if(r.dropped.length) notes.push("Compressed to "+ci.timeAvailable+" min: dropped "+joinAnd(r.dropped)+". First compound per muscle group preserved.");
+    if(r.stillOver) notes.push("Still tight. Trim rest periods to stay inside the window.");
+    exs = r.kept;
+  }
+
+  const items = exs.map(e=>({
+    name:e.name, muscle:e.muscle,
+    detail:e.sets+" × "+e.reps+" — rest "+(restMin(e.rest)+restBump).toFixed(restBump?2:1).replace(/\.?0+$/,"")+" min"
+  }));
+  const c = { heading: prog.name, items, notes };
+  c.finishBy = estMin(exs, restBump);
+  return c;
+}
+
+/* ============================================================
+   DAILY OUTPUTS
+   ============================================================ */
+function napGuidance(ci){
+  const now = new Date();
+  const needed = ci.sleepHours < 6.5 || ci.bodyBattery < 40;
+  if(!needed) return "No nap needed.";
+  if(now.getHours() >= 15) return "A nap was indicated ("+(ci.sleepHours<6.5?ci.sleepHours.toFixed(1)+" hr sleep":"Body Battery "+ci.bodyBattery)+"), but it is past 3 PM. Skip it and protect tonight's bedtime.";
+  return "20–25 min nap, before 2 PM. Driven by "+(ci.sleepHours<6.5?ci.sleepHours.toFixed(1)+" hr sleep":"Body Battery "+ci.bodyBattery)+".";
+}
+function sleepDebt3(endKey){
+  let debt = 0; const end = fromKey(endKey);
+  for(let i=0;i<3;i++){
+    const e = entries[dkey(addDays(end,-i))];
+    if(e && e.checkin) debt += Math.max(0, 8 - e.checkin.sleepHours);
+  }
+  return debt;
+}
+function bedtimeTarget(dateKey, verdict){
+  const wake = hmToMins(settings.wakeTime);
+  let target = wake - 8*60;
+  const debt = sleepDebt3(dateKey);
+  const buffered = verdict==="RED" || debt > 2;
+  if(buffered) target -= 30;
+  return { time: minsToHM(target), buffered, debt };
+}
+function stepGoal(dateKey, verdict){
+  const day = scheduleFor(fromKey(dateKey));
+  return (day.type==="rest" || verdict==="RED") ? 10000 : 8000;
+}
+/* weight avg over calendar window [end-days+1 .. end], from check-in weights */
+function weightAvg(endKey, daysBack, offset){
+  const end = fromKey(endKey); const vals = [];
+  for(let i=offset; i<offset+daysBack; i++){
+    const e = entries[dkey(addDays(end,-i))];
+    if(e && e.checkin && e.checkin.weight != null) vals.push(e.checkin.weight);
+  }
+  return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+}
+function weightEntryCount(){
+  return Object.values(entries).filter(e=>e.checkin && e.checkin.weight!=null).length;
+}
+
+/* ============================================================
+   SPARKLINES (inline SVG, single series, no libraries)
+   ============================================================ */
+function spark(vals, color){
+  const pts = vals.filter(v=>v!=null);
+  if(pts.length < 2) return '<div class="hint">Not enough data for a trend line.</div>';
+  const w = 560, h = 56, px = 8, py = 8;
+  let mn = Math.min(...pts), mx = Math.max(...pts);
+  if(mx === mn){ mx += 1; mn -= 1; }
+  const xs = [], n = vals.length; let path = "", started = false, lastX = 0, lastY = 0;
+  for(let i=0;i<n;i++){
+    if(vals[i]==null){ continue; }
+    const x = px + (n===1?0:(i/(n-1))*(w-2*px));
+    const y = h-py - ((vals[i]-mn)/(mx-mn))*(h-2*py);
+    path += (started?" L":"M")+x.toFixed(1)+" "+y.toFixed(1);
+    started = true; lastX = x; lastY = y;
+  }
+  return '<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none" role="img" aria-label="trend">'+
+    '<line x1="'+px+'" y1="'+(h-2)+'" x2="'+(w-px)+'" y2="'+(h-2)+'" stroke="#383835" stroke-width="1"/>'+
+    '<path d="'+path+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'+
+    '<circle cx="'+lastX+'" cy="'+lastY+'" r="4.5" fill="'+color+'" stroke="#1a1a19" stroke-width="2"/>'+
+  '</svg>';
+}
+function tile(label, big, delta, sparkHtml){
+  return '<div class="tile"><div class="tl">'+label+'</div>'+
+    '<div><span class="big">'+big+'</span>'+(delta?'<span class="delta">'+delta+'</span>':'')+'</div>'+
+    (sparkHtml||"")+'</div>';
+}
+function avg(a){ const v=a.filter(x=>x!=null); return v.length? v.reduce((x,y)=>x+y,0)/v.length : null; }
+function sd(a){ const v=a.filter(x=>x!=null); if(v.length<2) return null; const m=avg(v); return Math.sqrt(v.reduce((s,x)=>s+(x-m)*(x-m),0)/v.length); }
+
+/* ============================================================
+   RENDERING
+   ============================================================ */
+const $view = document.getElementById("view");
+let currentTab = "today";
+let draft = null;          // check-in form state
+let setupState = null;     // setup wizard state
+
+function setTab(t){
+  currentTab = t;
+  document.querySelectorAll("#tabs button").forEach(b=>b.classList.toggle("on", b.dataset.nav===t));
+  render();
+}
+function render(){
+  document.getElementById("hdrDate").textContent = fmtDate(new Date());
+  if(!settings.setupComplete){ renderSetup(); return; }
+  if(currentTab==="today"){
+    const e = entries[todayKey()];
+    if(e && e.checkin && !draft) renderResults(); else renderCheckin();
+  }
+  else if(currentTab==="evening") renderEvening();
+  else if(currentTab==="review") renderReview();
+  else renderSettings();
+}
+
+/* ---------- banners ---------- */
+function backupBannerHtml(){
+  const last = meta.lastExport ? Math.floor((Date.now()-new Date(meta.lastExport).getTime())/86400000) : null;
+  if(last!==null && last<=7) return "";
+  const txt = last===null ? "Last backup: never." : "Last backup: "+last+" days ago.";
+  return '<div class="banner"><span>'+txt+' Data lives only on this device.</span><button class="btn primary" data-action="export">Export now</button></div>';
+}
+function photoBannerHtml(){
+  const d = new Date();
+  const isFirstSunday = d.getDay()===0 && d.getDate()<=7;
+  const monthKey = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+  if(!isFirstSunday || meta.photoAckMonth===monthKey) return "";
+  return '<div class="banner"><span>Progress photos today. Same lighting, same spot, front/side/back. Save to your Progress album.</span><button class="btn" data-action="ackPhoto">Done</button></div>';
+}
+
+/* ---------- setup wizard ---------- */
+function renderSetup(){
+  if(!setupState) setupState = { step:1, wakeTime:settings.wakeTime, schedule:JSON.parse(JSON.stringify(settings.schedule)), programText:JSON.stringify(settings.program,null,2) };
+  const s = setupState;
+  let body = "";
+  if(s.step===1){
+    body = '<h2>Setup 1 of 3 — Wake time</h2>'+
+      '<div class="card"><p>Bedtime targets are computed from this. Workouts must finish by 7:45 AM.</p>'+
+      '<label class="f">Weekday wake time</label>'+
+      '<input type="time" id="suWake" value="'+esc(s.wakeTime)+'"></div>'+
+      '<button class="btn primary" data-action="setupNext">Next</button>';
+  } else if(s.step===2){
+    body = '<h2>Setup 2 of 3 — Weekly schedule</h2><div class="card">'+scheduleEditorHtml(s.schedule)+'</div>'+
+      '<div class="row2"><button class="btn" data-action="setupBack">Back</button><button class="btn primary" data-action="setupNext">Next</button></div>';
+  } else {
+    body = '<h2>Setup 3 of 3 — Program</h2>'+
+      '<div class="card"><p>This is the default V-taper template. Paste your real program over it now or later in Settings.</p>'+
+      '<textarea class="code" id="suProg">'+esc(s.programText)+'</textarea>'+
+      '<div class="err" id="suErr" hidden></div></div>'+
+      '<div class="row2"><button class="btn" data-action="setupBack">Back</button><button class="btn primary" data-action="setupFinish">Finish setup</button></div>';
+  }
+  $view.innerHTML = body;
+}
+function scheduleEditorHtml(sched){
+  const progKeys = Object.keys(settings.program);
+  let h = "";
+  for(let d=1; d<=7; d++){
+    const i = d%7; const row = sched[String(i)] || {name:"Rest",type:"rest"};
+    h += '<div class="sched-row" data-dow="'+i+'">'+
+      '<span class="dow">'+DOWS[i]+'</span>'+
+      '<input type="text" class="sc-name" value="'+esc(row.name)+'">'+
+      '<select class="sc-type">'+
+        ["lift","zone2","basketball","rest"].map(t=>'<option value="'+t+'"'+(row.type===t?" selected":"")+'>'+t+'</option>').join("")+
+      '</select>'+
+      '<select class="sc-prog"'+(row.type!=="lift"?" hidden":"")+'>'+
+        progKeys.map(k=>'<option value="'+k+'"'+(row.programKey===k?" selected":"")+'>'+k+'</option>').join("")+
+      '</select>'+
+    '</div>';
+  }
+  return h;
+}
+function readScheduleEditor(root){
+  const out = {};
+  root.querySelectorAll(".sched-row").forEach(r=>{
+    const dow = r.dataset.dow;
+    const type = r.querySelector(".sc-type").value;
+    const row = { name:r.querySelector(".sc-name").value.trim()||"—", type };
+    if(type==="lift") row.programKey = r.querySelector(".sc-prog").value;
+    if(type==="zone2") row.minutes = 45;
+    out[dow] = row;
+  });
+  return out;
+}
+
+/* ---------- check-in form ---------- */
+const MUSCLES = ["Shoulders","Back","Chest","Arms","Legs"];
+function blankDraft(){
+  return { hrv:null, bodyBattery:null, sleepHours:7.0, sleepScore:null, restingHR:null,
+    soreness:{}, energy:null, timeAvailable:null, weight:null,
+    proteinYesterday:null, stepsYesterday:null, notes:"",
+    meas:{ waist:null, shoulders:null, chest:null, armL:null, armR:null }, measSkipped:false };
+}
+function seg(field, options, labels){
+  const d = draft;
+  return '<div class="seg" data-field="'+field+'">'+options.map((o,i)=>
+    '<button data-seg="'+o+'" class="'+(String(d[field])===String(o)?"on":"")+'">'+(labels?labels[i]:o)+'</button>').join("")+'</div>';
+}
+function ynSeg(field){
+  const d=draft; const v=d[field];
+  return '<div class="seg" data-field="'+field+'" data-yn="1">'+
+    '<button data-seg="true" class="'+(v===true?"on":"")+'">Yes</button>'+
+    '<button data-seg="false" class="'+(v===false?"on":"")+'">No</button></div>';
+}
+function renderCheckin(){
+  const existing = entries[todayKey()];
+  if(!draft){
+    draft = blankDraft();
+    if(existing && existing.checkin){ Object.assign(draft, JSON.parse(JSON.stringify(existing.checkin)));
+      if(existing.measurements) { draft.meas = {...existing.measurements}; }
+    }
+  }
+  const d = draft;
+  const day = scheduleFor(new Date());
+  const isSunday = new Date().getDay()===0;
+  const tue = new Date().getDay()===2;
+  $view.innerHTML =
+    '<h2>Morning check-in</h2>'+
+    '<p class="hint">'+esc(day.name)+(tue?' — Tuesday thresholds are tightened after Monday basketball.':'')+'</p>'+
+    '<div class="card">'+
+      '<label class="f">HRV Status</label>'+seg("hrv",["Balanced","Unbalanced","Low"])+
+      '<label class="f">Body Battery <span class="req">0–100</span></label>'+
+      '<input type="number" inputmode="numeric" min="0" max="100" data-bind="bodyBattery" value="'+(d.bodyBattery??"")+'">'+
+      '<label class="f">Sleep duration</label>'+
+      '<div class="stepper"><button data-action="sleepMinus">−</button><span class="val" id="sleepVal">'+d.sleepHours.toFixed(1)+' hr</span><button data-action="sleepPlus">+</button></div>'+
+      '<label class="f">Garmin Sleep Score <span class="req">0–100</span></label>'+
+      '<input type="number" inputmode="numeric" min="0" max="100" data-bind="sleepScore" value="'+(d.sleepScore??"")+'">'+
+      '<label class="f">Resting HR <span class="req">bpm</span></label>'+
+      '<input type="number" inputmode="numeric" min="30" max="120" data-bind="restingHR" value="'+(d.restingHR??"")+'">'+
+    '</div>'+
+    '<div class="card">'+
+      '<label class="f">Soreness <span class="req">tap: none → mild → significant</span></label>'+
+      '<div class="chips" id="soreChips">'+MUSCLES.map(m=>{
+        const lv = d.soreness[m];
+        return '<button data-chip="'+m+'" class="'+(lv==="Mild"?"mild":lv==="Significant"?"sig":"")+'">'+m+(lv?" · "+lv:"")+'</button>';
+      }).join("")+'<button data-action="soreNone">None</button></div>'+
+      '<label class="f">Subjective energy</label>'+seg("energy",[1,2,3,4,5])+
+      '<label class="f">Time available this morning</label>'+seg("timeAvailable",[90,60,45,30],["90 min","60 min","45 min","30 min"])+
+    '</div>'+
+    '<div class="card">'+
+      '<label class="f">Body weight <span class="req">lb</span></label>'+
+      '<input type="number" inputmode="decimal" step="0.1" data-bind="weight" value="'+(d.weight??"")+'">'+
+      '<p class="hint">After waking, after bathroom, before food or water.</p>'+
+      '<label class="f">Yesterday: protein target hit</label>'+ynSeg("proteinYesterday")+
+      '<label class="f">Yesterday: step goal hit</label>'+ynSeg("stepsYesterday")+
+      '<label class="f">Notes <span class="req">optional</span></label>'+
+      '<textarea data-bind="notes">'+esc(d.notes)+'</textarea>'+
+    '</div>'+
+    (isSunday ? measurementsCardHtml() : "")+
+    '<div class="err" id="ciErr" hidden></div>'+
+    '<button class="btn primary" data-action="logIt">Log it</button>'+
+    (existing && existing.checkin ? '<button class="btn quiet" data-action="cancelEdit">Cancel</button>' : "");
+}
+function measurementsCardHtml(){
+  const m = draft.meas; const f = (k,l)=>'<div class="mrow"><label>'+l+'</label><input type="number" inputmode="decimal" step="0.1" data-meas="'+k+'" value="'+(m[k]??"")+'"></div>';
+  if(draft.measSkipped) return '<div class="card"><p>Measurements skipped this week. <button class="btn quiet" data-action="unskipMeas" style="display:inline;width:auto">Undo</button></p></div>';
+  return '<div class="card"><h3>Sunday measurements — inches, one decimal</h3>'+
+    '<p class="hint">Same tape, same time of day, relaxed except arms.</p>'+
+    f("waist","Waist at navel")+f("shoulders","Shoulders at widest")+f("chest","Chest at nipple line")+
+    f("armL","Left arm, flexed")+f("armR","Right arm, flexed")+
+    '<button class="btn quiet" data-action="skipMeas">Skip this week</button></div>';
+}
+function validateDraft(d){
+  const missing = [];
+  if(!d.hrv) missing.push("HRV Status");
+  if(d.bodyBattery==null || d.bodyBattery<0 || d.bodyBattery>100) missing.push("Body Battery");
+  if(d.sleepScore==null || d.sleepScore<0 || d.sleepScore>100) missing.push("Sleep Score");
+  if(d.restingHR==null) missing.push("Resting HR");
+  if(d.energy==null) missing.push("Energy");
+  if(d.timeAvailable==null) missing.push("Time available");
+  return missing;
+}
+function saveCheckin(){
+  const d = draft;
+  const missing = validateDraft(d);
+  const errEl = document.getElementById("ciErr");
+  if(missing.length){ errEl.hidden=false; errEl.textContent = "Missing: "+missing.join(", ")+"."; errEl.scrollIntoView({block:"center"}); return; }
+  const key = todayKey();
+  const ci = { hrv:d.hrv, bodyBattery:d.bodyBattery, sleepHours:d.sleepHours, sleepScore:d.sleepScore,
+    restingHR:d.restingHR, soreness:{...d.soreness}, energy:d.energy, timeAvailable:d.timeAvailable,
+    weight:d.weight, proteinYesterday:d.proteinYesterday, stepsYesterday:d.stepsYesterday,
+    notes:d.notes||"", loggedAt:new Date().toISOString() };
+  const { verdict, reason } = computeVerdict(ci, new Date());
+  const entry = entries[key] || { date:key };
+  entry.checkin = ci; entry.verdict = verdict; entry.reason = reason;
+  const mv = Object.values(d.meas).some(v=>v!=null);
+  if(new Date().getDay()===0 && !d.measSkipped && mv) entry.measurements = {...d.meas};
+  entries[key] = entry;
+  save(LS.entries, entries);
+  draft = null;
+  renderResults();
+}
+
+/* ---------- results ---------- */
+function renderResults(){
+  const key = todayKey();
+  const e = entries[key];
+  if(!e || !e.checkin){ renderCheckin(); return; }
+  const ci = e.checkin;
+  const date = fromKey(key);
+  const day = scheduleFor(date);
+  const w = buildWorkout(ci, date, e.verdict);
+  const nap = napGuidance(ci);
+  const bt = bedtimeTarget(key, e.verdict);
+  const steps = stepGoal(key, e.verdict);
+
+  /* weight trend */
+  let weightHtml;
+  if(weightEntryCount() < 7){
+    weightHtml = '<span class="x">Building baseline ('+weightEntryCount()+'/7)</span>';
+  } else {
+    const cur = weightAvg(key,7,0), prev = weightAvg(key,7,7);
+    if(cur==null) weightHtml = '<span class="x">Building baseline</span>';
+    else {
+      const delta = prev!=null ? (cur-prev) : null;
+      weightHtml = '<span class="x">'+cur.toFixed(1)+' lb (7-day avg)'+
+        (delta!=null ? " · "+(delta>=0?"+":"")+delta.toFixed(1)+" vs prior week" : " · prior week incomplete")+'</span>';
+    }
+  }
+
+  let workoutBody = '<ul class="wx">'+w.items.map(it=>
+    '<li>'+(it.muscle?'<div class="mg">'+it.muscle+'</div>':'')+'<div class="nm">'+esc(it.name)+'</div><div class="dt">'+esc(it.detail)+'</div></li>').join("")+'</ul>';
+  const finishNote = (w.finishBy && (day.type==="lift"||day.type==="zone2"))
+    ? '<p class="hint">~'+w.finishBy+' min. Start by '+fmt12(minsToHM(7*60+45-w.finishBy))+' to finish by 7:45 AM.</p>' : "";
+
+  $view.innerHTML =
+    backupBannerHtml() + photoBannerHtml() +
+    '<div class="verdict '+e.verdict+'"><div class="v">'+e.verdict+'</div><p>'+esc(e.reason)+'</p></div>'+
+    '<div class="card"><h3>'+esc(w.heading)+'</h3>'+finishNote+workoutBody+
+      w.notes.map(n=>'<div class="note'+(n===RED_MSG?" warn":"")+'">'+esc(n)+'</div>').join("")+
+    '</div>'+
+    '<div class="card">'+
+      '<div class="out"><span class="k">Nap</span><span class="x" style="text-align:right">'+esc(nap)+'</span></div>'+
+      '<div class="out"><span class="k">Bedtime tonight</span><span class="x">'+fmt12(bt.time)+
+        (bt.buffered?'<div class="hint">30-min buffer: '+(e.verdict==="RED"?"RED day":"sleep debt "+bt.debt.toFixed(1)+" hr over 3 days")+'</div>':'<div class="hint">Wake '+fmt12(settings.wakeTime)+', 8 hr target</div>')+'</span></div>'+
+      '<div class="out"><span class="k">Step goal</span><span class="x">'+steps.toLocaleString()+
+        (steps===10000?'<div class="hint">Raised — walking is the recovery modality</div>':'')+'</span></div>'+
+      '<div class="out"><span class="k">Weight trend</span>'+weightHtml+'</div>'+
+    '</div>'+
+    '<button class="btn" data-action="editToday">Edit today</button>'+
+    (new Date().getDay()===0 ? '<button class="btn" data-action="goReview">Open weekly review</button>' : "");
+}
+
+/* ---------- evening log ---------- */
+let evDraft = null;
+function renderEvening(){
+  const key = todayKey();
+  const e = entries[key] || {};
+  if(!evDraft){
+    evDraft = e.evening ? {...e.evening} : { bedtime: bedtimeTarget(key, e.verdict||"GREEN").time, trained:null, modifications:"", protein:null };
+  }
+  const d = evDraft;
+  $view.innerHTML =
+    '<h2>Evening log</h2>'+
+    '<div class="card">'+
+      '<label class="f">Actual bedtime last night</label>'+
+      '<input type="time" id="evBed" value="'+esc(d.bedtime)+'">'+
+      '<label class="f">Training completed today</label>'+
+      '<div class="seg" data-evfield="trained"><button data-seg="true" class="'+(d.trained===true?"on":"")+'">Yes</button><button data-seg="false" class="'+(d.trained===false?"on":"")+'">No</button></div>'+
+      (d.trained===true?'<label class="f">Modifications <span class="req">optional</span></label><input type="text" id="evMods" value="'+esc(d.modifications)+'" placeholder="as written / cut sets / swapped, etc.">':"")+
+      '<label class="f">Protein target hit today</label>'+
+      '<div class="seg" data-evfield="protein"><button data-seg="true" class="'+(d.protein===true?"on":"")+'">Yes</button><button data-seg="false" class="'+(d.protein===false?"on":"")+'">No</button></div>'+
+    '</div>'+
+    '<button class="btn primary" data-action="saveEvening">Save evening log</button>'+
+    (e.evening?'<p class="ok">Logged at '+new Date(e.evening.loggedAt).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})+'.</p>':"");
+}
+function saveEvening(){
+  const key = todayKey();
+  const bed = document.getElementById("evBed").value || evDraft.bedtime;
+  const mods = document.getElementById("evMods");
+  const entry = entries[key] || { date:key };
+  entry.evening = { bedtime:bed, trained:evDraft.trained, modifications:mods?mods.value:"", protein:evDraft.protein, loggedAt:new Date().toISOString() };
+  entries[key] = entry; save(LS.entries, entries);
+  evDraft = null; renderEvening();
+}
+
+/* ============================================================
+   WEEKLY REVIEW
+   ============================================================ */
+function lastNKeys(n, endKey){
+  const end = fromKey(endKey); const out = [];
+  for(let i=n-1;i>=0;i--) out.push(dkey(addDays(end,-i)));
+  return out;
+}
+function series(keys, fn){ return keys.map(k=>{ const e=entries[k]; return e?fn(e):null; }); }
+/* bedtime → minutes on a scale where 12:00 noon = 0, so times around midnight are continuous */
+function bedMins(hm){ let m = hmToMins(hm) - 720; if(m<0) m += 1440; return m; }
+
+function proteinHit(k){
+  const e = entries[k];
+  if(e && e.evening && e.evening.protein!=null) return e.evening.protein;
+  const next = entries[dkey(addDays(fromKey(k),1))];
+  if(next && next.checkin && next.checkin.proteinYesterday!=null) return next.checkin.proteinYesterday;
+  return null;
+}
+function stepsHit(k){
+  const next = entries[dkey(addDays(fromKey(k),1))];
+  if(next && next.checkin && next.checkin.stepsYesterday!=null) return next.checkin.stepsYesterday;
+  return null;
+}
+
+function renderReview(){
+  const key = todayKey();
+  const isSunday = new Date().getDay()===0;
+  const k7 = lastNKeys(7,key), k14 = lastNKeys(14,key);
+
+  const rhr7 = series(k7, e=>e.checkin?e.checkin.restingHR:null);
+  const rhr14 = series(k14, e=>e.checkin?e.checkin.restingHR:null);
+  const bb7 = series(k7, e=>e.checkin?e.checkin.bodyBattery:null);
+  const sl7 = series(k7, e=>e.checkin?e.checkin.sleepHours:null);
+  const wt14 = series(k14, e=>e.checkin?e.checkin.weight:null);
+  const beds = series(k7, e=>e.evening?bedMins(e.evening.bedtime):null);
+  const hrv7 = series(k7, e=>e.checkin?e.checkin.hrv:null).filter(Boolean);
+  const dataDays = k7.filter(k=>entries[k] && entries[k].checkin).length;
+
+  if(dataDays===0){
+    $view.innerHTML = '<h2>Weekly review</h2><div class="card"><p>No check-ins in the last 7 days. The review builds itself as you log mornings.</p></div>';
+    return;
+  }
+
+  /* verdict + adherence */
+  const counts = {GREEN:0,YELLOW:0,RED:0};
+  k7.forEach(k=>{ const e=entries[k]; if(e&&e.verdict) counts[e.verdict]++; });
+  const schedDays = k7.filter(k=>scheduleFor(fromKey(k)).type!=="rest");
+  const completed = schedDays.filter(k=>entries[k] && entries[k].evening && entries[k].evening.trained===true).length;
+  const pHits = k7.map(proteinHit).filter(v=>v!=null);
+  const pPct = pHits.length ? Math.round(100*pHits.filter(Boolean).length/pHits.length) : null;
+  const sHits = k7.map(stepsHit).filter(v=>v!=null);
+  const sPct = sHits.length ? Math.round(100*sHits.filter(Boolean).length/sHits.length) : null;
+
+  /* weight rate of change */
+  const cur = weightAvg(key,7,0), prev = weightAvg(key,7,7);
+  let rocHtml = "", rocSentence = "Not enough weight entries yet to judge the trend.";
+  let pct = null;
+  if(cur!=null && prev!=null){
+    pct = (cur-prev)/prev*100;
+    const rhrCur = avg(rhr7), rhrPrev = avg(series(lastNKeys(14,key).slice(0,7), e=>e.checkin?e.checkin.restingHR:null));
+    const rhrRising = rhrCur!=null && rhrPrev!=null && (rhrCur-rhrPrev) >= 2;
+    if(pct < -1){
+      rocHtml = '<div class="note warn">Losing '+Math.abs(pct).toFixed(1)+'% per week — faster than the 1% limit. Likely muscle loss risk. Raise calories slightly.</div>';
+      rocSentence = "Weight is dropping "+Math.abs(pct).toFixed(1)+"% per week, past the muscle-preservation limit; calories go up slightly.";
+      if(rhrRising) rocHtml += '<div class="note warn">Weight dropping fast and resting HR up '+(rhrCur-rhrPrev).toFixed(1)+' bpm. Strong under-eating signal. Increase intake.</div>';
+    } else if(pct > 0.5){
+      rocHtml = '<div class="note warn">Gaining '+pct.toFixed(1)+'% per week — above the 0.5% ceiling. Surplus creep. Review intake.</div>';
+      rocSentence = "Weight is up "+pct.toFixed(1)+"% on the week, above the surplus ceiling; intake gets reviewed.";
+    } else {
+      rocHtml = '<div class="note">'+(pct>=0?"+":"")+pct.toFixed(1)+'% week over week. On track for recomposition.</div>';
+      rocSentence = "Weight moved "+(pct>=0?"+":"")+pct.toFixed(1)+"% week over week — inside the recomposition band.";
+    }
+  }
+
+  /* deload flag */
+  const rhrCurAvg = avg(rhr7);
+  const rhrPrevAvg = avg(rhr14.slice(0,7));
+  const offDays = series(k14, e=>e.checkin?e.checkin.hrv:null).filter(v=>v==="Unbalanced"||v==="Low").length;
+  const deloadFlag = rhrCurAvg!=null && rhrPrevAvg!=null && (rhrCurAvg-rhrPrevAvg)>=3 && offDays>=4;
+  let deloadHtml = "";
+  if(deloadActive(addDays(new Date(),1)) || deloadActive(new Date())){
+    deloadHtml = '<div class="card" style="border-color:var(--yellow)"><h3 style="color:var(--yellow)">Deload week set</h3><p>All sessions run the YELLOW protocol through '+esc(meta.deload.to)+'.</p><button class="btn quiet" data-action="clearDeload">Cancel deload</button></div>';
+  } else if(deloadFlag){
+    deloadHtml = '<div class="card" style="border-color:var(--yellow)"><h3 style="color:var(--yellow)">Deload recommended</h3>'+
+      '<p>Resting HR 7-day average is up '+(rhrCurAvg-rhrPrevAvg).toFixed(1)+' bpm from the prior week and HRV was Unbalanced or Low on '+offDays+' of the last 14 days. Next week becomes a deload: all sessions at YELLOW protocol regardless of verdict. A rising resting HR during a recomposition can also signal under-eating — review calorie intake.</p>'+
+      '<button class="btn primary" data-action="setDeload">Set next week to deload</button></div>';
+  }
+
+  /* summary — two sentences, declarative */
+  const s1 = counts.GREEN+" GREEN, "+counts.YELLOW+" YELLOW, "+counts.RED+" RED across the last 7 days; "+completed+" of "+schedDays.length+" scheduled sessions logged complete.";
+  const summary = s1+" "+rocSentence;
+
+  /* measurements / ratio */
+  const measEntries = Object.values(entries).filter(e=>e.measurements && e.measurements.shoulders && e.measurements.waist)
+    .sort((a,b)=>a.date<b.date?-1:1);
+  const ratios = measEntries.map(e=>e.measurements.shoulders/e.measurements.waist);
+  let ratioHtml = "";
+  if(ratios.length){
+    ratioHtml = tile("Shoulder-to-waist ratio — primary V-taper metric", ratios[ratios.length-1].toFixed(2),
+      ratios.length>1 ? ((ratios[ratios.length-1]-ratios[0]>=0?"+":"")+(ratios[ratios.length-1]-ratios[0]).toFixed(2)+" since first entry") : "first entry",
+      spark(ratios, "#3987e5"));
+  } else {
+    ratioHtml = '<div class="tile"><div class="tl">Shoulder-to-waist ratio</div><div class="hint">No measurements yet. Sunday check-ins prompt for them.</div></div>';
+  }
+
+  const hrvCounts = { Balanced:0, Unbalanced:0, Low:0 };
+  hrv7.forEach(v=>hrvCounts[v]++);
+  const hrvColors = { Balanced:"var(--green)", Unbalanced:"var(--yellow)", Low:"var(--red)" };
+  const distHtml = '<div class="tile"><div class="tl">HRV status — last 7 days</div><div class="dist">'+
+    Object.keys(hrvCounts).map(kk=>'<div class="dr"><span class="dl">'+kk+'</span><span class="bar" style="background:'+hrvColors[kk]+';width:'+(hrvCounts[kk]/7*70)+'%"></span><span class="dn">'+hrvCounts[kk]+'</span></div>').join("")+'</div></div>';
+
+  const bedSd = sd(beds);
+  const wtRoll = k14.map((k,i)=>weightAvg(k,7,0)); // rolling 7-day avg across 14 days
+
+  $view.innerHTML =
+    '<h2>Weekly review'+(isSunday?"":" (preview — auto-generated Sundays)")+'</h2>'+
+    '<div class="card"><p class="summary">'+esc(summary)+'</p></div>'+
+    deloadHtml+
+    '<div class="card"><h3>Body weight</h3>'+
+      (weightEntryCount()<7
+        ? '<p class="hint">Building baseline ('+weightEntryCount()+'/7 entries). Single-day weights are water and glycogen noise; the app only judges 7-day averages.</p>'
+        : tile("7-day rolling average", cur!=null?cur.toFixed(1)+" lb":"—",
+            prev!=null&&cur!=null ? ((cur-prev>=0?"+":"")+(cur-prev).toFixed(1)+" lb vs prior week") : "prior week incomplete",
+            spark(wtRoll,"#3987e5")) + rocHtml)+
+    '</div>'+
+    ratioHtml+
+    tile("Resting HR — 14 days", rhrCurAvg!=null?Math.round(rhrCurAvg)+" bpm avg":"—",
+      rhrPrevAvg!=null&&rhrCurAvg!=null?((rhrCurAvg-rhrPrevAvg>=0?"+":"")+(rhrCurAvg-rhrPrevAvg).toFixed(1)+" vs prior week"):"", spark(rhr14,"#3987e5"))+
+    distHtml+
+    tile("Body Battery — last 7 days", avg(bb7)!=null?Math.round(avg(bb7))+" avg":"—","", spark(bb7,"#3987e5"))+
+    tile("Sleep — last 7 days", avg(sl7)!=null?avg(sl7).toFixed(1)+" hr avg":"—","", spark(sl7,"#3987e5"))+
+    tile("Bedtime consistency", bedSd!=null?"±"+Math.round(bedSd)+" min":"—",
+      bedSd!=null?"standard deviation of logged bedtimes":"log bedtimes in the evening tab", spark(beds,"#3987e5"))+
+    '<div class="card"><h3>Adherence</h3>'+
+      '<div class="out"><span class="k">Sessions completed</span><span class="x">'+completed+' / '+schedDays.length+'</span></div>'+
+      '<div class="out"><span class="k">Verdicts</span><span class="x">'+counts.GREEN+' G · '+counts.YELLOW+' Y · '+counts.RED+' R</span></div>'+
+      '<div class="out"><span class="k">Protein</span><span class="x">'+(pPct!=null?pPct+"%":"no data")+'</span></div>'+
+      '<div class="out"><span class="k">Steps</span><span class="x">'+(sPct!=null?sPct+"%":"no data")+'</span></div>'+
+    '</div>';
+}
+
+/* ============================================================
+   SETTINGS
+   ============================================================ */
+function renderSettings(){
+  const lastExp = meta.lastExport ? new Date(meta.lastExport).toLocaleDateString() : "never";
+  $view.innerHTML =
+    '<h2>Settings</h2>'+
+    '<div class="card"><h3>Wake time</h3>'+
+      '<input type="time" id="setWake" value="'+esc(settings.wakeTime)+'">'+
+      '<p class="hint">Bedtime target = wake time − 8 hr (− 30 min on RED days or with 3-day sleep debt over 2 hr).</p>'+
+      '<button class="btn" data-action="saveWake">Save wake time</button></div>'+
+    '<div class="card"><h3>Weekly schedule</h3>'+scheduleEditorHtml(settings.schedule)+
+      '<button class="btn" data-action="saveSchedule">Save schedule</button></div>'+
+    '<div class="card"><h3>Program JSON</h3>'+
+      '<p class="hint">Each exercise: name, muscle (Shoulders/Back/Chest/Arms/Legs), kind (compound/isolation), sets, reps, rest (minutes). The engine uses muscle and kind for soreness swaps and time compression.</p>'+
+      '<textarea class="code" id="setProg">'+esc(JSON.stringify(settings.program,null,2))+'</textarea>'+
+      '<div class="err" id="progErr" hidden></div><div class="ok" id="progOk" hidden>Program saved.</div>'+
+      '<button class="btn" data-action="saveProgram">Save program</button></div>'+
+    '<div class="card"><h3>Data</h3>'+
+      '<p class="hint">All data lives in this browser’s localStorage. It is device-specific and is deleted if browser data is wiped. Export weekly. Last export: '+lastExp+'.</p>'+
+      '<button class="btn primary" data-action="export">Export JSON</button>'+
+      '<button class="btn" data-action="importPick">Import JSON</button>'+
+      '<input type="file" id="importFile" accept=".json,application/json" hidden>'+
+      '<div class="err" id="impErr" hidden></div><div class="ok" id="impOk" hidden></div>'+
+      '<hr class="divider">'+
+      '<button class="btn danger" data-action="wipe">Delete all data</button></div>';
+}
+function doExport(){
+  const payload = {
+    app:"morning-protocol", version:1, exportedAt:new Date().toISOString(),
+    settings:{ wakeTime:settings.wakeTime, schedule:settings.schedule, program:settings.program },
+    meta:{ photoAckMonth:meta.photoAckMonth, deload:meta.deload },
+    entries:Object.keys(entries).sort().map(k=>entries[k])
+  };
+  const blob = new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "morning-protocol-"+todayKey()+".json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  meta.lastExport = new Date().toISOString(); save(LS.meta, meta);
+  render();
+}
+function doImport(file){
+  const rd = new FileReader();
+  rd.onload = ()=>{
+    const errEl=document.getElementById("impErr"), okEl=document.getElementById("impOk");
+    try{
+      const p = JSON.parse(rd.result);
+      if(!p || !Array.isArray(p.entries)) throw new Error("Not a Morning Protocol export: missing entries array.");
+      if(!confirm("Import "+p.entries.length+" entries? Entries with matching dates are overwritten.")) return;
+      p.entries.forEach(en=>{ if(en && en.date) entries[en.date]=en; });
+      if(p.settings){ settings = {...settings, ...p.settings, setupComplete:true}; save(LS.settings, settings); }
+      if(p.meta){ meta = {...meta, ...p.meta}; save(LS.meta, meta); }
+      save(LS.entries, entries);
+      okEl.hidden=false; okEl.textContent="Imported "+p.entries.length+" entries."; errEl.hidden=true;
+    }catch(ex){ errEl.hidden=false; errEl.textContent="Import failed: "+ex.message; okEl.hidden=true; }
+  };
+  rd.readAsText(file);
+}
+function validateProgram(obj){
+  if(typeof obj!=="object" || obj===null || Array.isArray(obj)) return "Top level must be an object of programs.";
+  for(const k of Object.keys(obj)){
+    const p = obj[k];
+    if(!p || !Array.isArray(p.exercises)) return 'Program "'+k+'" needs an "exercises" array.';
+    for(const e of p.exercises){
+      if(!e.name || !e.muscle || !e.sets || !e.reps) return 'Program "'+k+'": every exercise needs name, muscle, sets, reps.';
+      if(!MUSCLES.includes(e.muscle)) return 'Program "'+k+'": muscle "'+e.muscle+'" must be one of '+MUSCLES.join("/")+".";
+      if(e.kind!=="compound" && e.kind!=="isolation") return 'Program "'+k+'": "'+e.name+'" needs kind: "compound" or "isolation".';
+    }
+  }
+  return null;
+}
+
+/* ============================================================
+   EVENTS
+   ============================================================ */
+const NUMERIC_SEG_FIELDS = ["energy","timeAvailable"];
+document.addEventListener("click", ev=>{
+  const nav = ev.target.closest("[data-nav]");
+  if(nav){ setTab(nav.dataset.nav); return; }
+  const segBtn = ev.target.closest("[data-seg]");
+  if(segBtn){
+    const group = segBtn.closest(".seg");
+    const field = group.dataset.field || group.dataset.evfield;
+    let val = segBtn.dataset.seg;
+    if(group.dataset.yn || group.dataset.evfield) val = (val==="true");
+    else if(NUMERIC_SEG_FIELDS.includes(field)) val = Number(val);
+    if(group.dataset.evfield){
+      const bed = document.getElementById("evBed"); if(bed && bed.value) evDraft.bedtime = bed.value;
+      const mods = document.getElementById("evMods"); if(mods) evDraft.modifications = mods.value;
+      evDraft[field]=val; renderEvening(); return;
+    }
+    draft[field]=val;
+    group.querySelectorAll("button").forEach(b=>b.classList.toggle("on", b===segBtn));
+    return;
+  }
+  const chip = ev.target.closest("[data-chip]");
+  if(chip){
+    const m = chip.dataset.chip;
+    const cur = draft.soreness[m];
+    if(!cur) draft.soreness[m]="Mild";
+    else if(cur==="Mild") draft.soreness[m]="Significant";
+    else delete draft.soreness[m];
+    const lv = draft.soreness[m];
+    chip.className = lv==="Mild"?"mild":lv==="Significant"?"sig":"";
+    chip.textContent = m+(lv?" · "+lv:"");
+    return;
+  }
+  const act = ev.target.closest("[data-action]");
+  if(!act) return;
+  const a = act.dataset.action;
+  if(a==="sleepMinus"||a==="sleepPlus"){
+    draft.sleepHours = Math.min(14, Math.max(0, draft.sleepHours + (a==="sleepPlus"?0.5:-0.5)));
+    document.getElementById("sleepVal").textContent = draft.sleepHours.toFixed(1)+" hr";
+  }
+  else if(a==="soreNone"){ draft.soreness={}; document.querySelectorAll("#soreChips [data-chip]").forEach(c=>{ c.className=""; c.textContent=c.dataset.chip; }); }
+  else if(a==="skipMeas"){ draft.measSkipped=true; syncInputs(); renderCheckin(); }
+  else if(a==="unskipMeas"){ draft.measSkipped=false; syncInputs(); renderCheckin(); }
+  else if(a==="logIt"){ saveCheckin(); }
+  else if(a==="cancelEdit"){ draft=null; renderResults(); }
+  else if(a==="editToday"){ draft=null; const e=entries[todayKey()]; draft=blankDraft(); if(e&&e.checkin){Object.assign(draft,JSON.parse(JSON.stringify(e.checkin))); if(e.measurements)draft.meas={...e.measurements};} renderCheckin(); }
+  else if(a==="goReview"){ setTab("review"); }
+  else if(a==="saveEvening"){ saveEvening(); }
+  else if(a==="export"){ doExport(); }
+  else if(a==="ackPhoto"){ const d=new Date(); meta.photoAckMonth=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); save(LS.meta,meta); render(); }
+  else if(a==="setDeload"){
+    const now = new Date();
+    const daysToMon = (8 - now.getDay()) % 7 || 7;
+    const from = addDays(now, daysToMon);
+    meta.deload = { from:dkey(from), to:dkey(addDays(from,6)) };
+    save(LS.meta, meta); render();
+  }
+  else if(a==="clearDeload"){ meta.deload=null; save(LS.meta,meta); render(); }
+  else if(a==="saveWake"){ settings.wakeTime=document.getElementById("setWake").value||settings.wakeTime; save(LS.settings,settings); render(); }
+  else if(a==="saveSchedule"){ settings.schedule=readScheduleEditor($view); save(LS.settings,settings); render(); }
+  else if(a==="saveProgram"){
+    const errEl=document.getElementById("progErr"), okEl=document.getElementById("progOk");
+    try{
+      const obj = JSON.parse(document.getElementById("setProg").value);
+      const bad = validateProgram(obj);
+      if(bad) throw new Error(bad);
+      settings.program = obj; save(LS.settings, settings);
+      okEl.hidden=false; errEl.hidden=true;
+    }catch(ex){ errEl.hidden=false; errEl.textContent=ex.message; okEl.hidden=true; }
+  }
+  else if(a==="importPick"){ document.getElementById("importFile").click(); }
+  else if(a==="wipe"){
+    if(confirm("Delete every entry and setting on this device? Export first if you have not.")){
+      localStorage.removeItem(LS.entries); localStorage.removeItem(LS.settings); localStorage.removeItem(LS.meta);
+      settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS)); entries={}; meta={lastExport:null,photoAckMonth:null,deload:null};
+      draft=null; setupState=null; render();
+    }
+  }
+  else if(a==="setupNext"){
+    if(setupState.step===1) setupState.wakeTime = document.getElementById("suWake").value || setupState.wakeTime;
+    if(setupState.step===2) setupState.schedule = readScheduleEditor($view);
+    setupState.step++; renderSetup();
+  }
+  else if(a==="setupBack"){ setupState.step--; renderSetup(); }
+  else if(a==="setupFinish"){
+    const errEl = document.getElementById("suErr");
+    try{
+      const obj = JSON.parse(document.getElementById("suProg").value);
+      const bad = validateProgram(obj); if(bad) throw new Error(bad);
+      settings = { setupComplete:true, wakeTime:setupState.wakeTime, schedule:setupState.schedule, program:obj };
+      save(LS.settings, settings);
+      setupState = null; setTab("today");
+    }catch(ex){ errEl.hidden=false; errEl.textContent = ex.message; }
+  }
+});
+document.addEventListener("input", ev=>{
+  const b = ev.target.closest("[data-bind]");
+  if(b && draft){
+    const f = b.dataset.bind;
+    if(f==="notes") draft.notes = b.value;
+    else draft[f] = b.value==="" ? null : parseFloat(b.value);
+    return;
+  }
+  const m = ev.target.closest("[data-meas]");
+  if(m && draft){ draft.meas[m.dataset.meas] = m.value==="" ? null : parseFloat(m.value); return; }
+  const row = ev.target.closest(".sched-row");
+  if(row && ev.target.classList.contains("sc-type")){
+    row.querySelector(".sc-prog").hidden = ev.target.value!=="lift";
+  }
+});
+document.addEventListener("change", ev=>{
+  if(ev.target.id==="importFile" && ev.target.files[0]) doImport(ev.target.files[0]);
+});
+/* keep number inputs' current values in draft before re-render */
+function syncInputs(){
+  document.querySelectorAll("[data-bind]").forEach(b=>{
+    const f=b.dataset.bind;
+    if(f==="notes") draft.notes=b.value;
+    else draft[f]=b.value===""?null:parseFloat(b.value);
+  });
+}
+/* re-route if the date rolls over while the app stays open */
+let openedOn = todayKey();
+document.addEventListener("visibilitychange", ()=>{
+  if(!document.hidden && todayKey()!==openedOn){ openedOn=todayKey(); draft=null; evDraft=null; setTab("today"); }
+});
+
+/* ---------- boot ---------- */
+if("serviceWorker" in navigator && (location.protocol==="https:" || location.hostname==="localhost")){
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
+}
+setTab("today");
+</script>
+</body>
+</html>
