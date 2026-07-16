@@ -62,6 +62,8 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--blue); outline-o
   border:1px solid var(--border); border-radius:12px; font-family:inherit;
 }
 .seg button.on{background:var(--blue); color:#fff; border-color:var(--blue);}
+.seg.wrap button{flex:1 1 30%;}
+.mrow select{width:150px; flex-shrink:0;}
 /* Soreness chips */
 .chips{display:flex; gap:8px; flex-wrap:wrap;}
 .chips button{
@@ -214,11 +216,23 @@ const DEFAULT_SCHEDULE = {
   "5": {name:"Zone 2 cardio",             type:"zone2", minutes:45},
   "6": {name:"Lift — Full upper",         type:"lift",  programKey:"fullUpper"}
 };
-const DEFAULT_SETTINGS = { setupComplete:false, wakeTime:"05:45", schedule:DEFAULT_SCHEDULE, program:DEFAULT_PROGRAM };
+const DEFAULT_THRESHOLDS = {
+  hrvGreen:"Balanced",   // HRV status required for GREEN
+  hrvRed:"Low",          // HRV status that forces RED
+  bbGreen:50, bbGreenTuesday:60, bbRed:30,
+  sleepGreen:6.5, sleepRed:5.5,
+  energyGreen:3, soreRed:2,
+  sleepInMins:60,        // minutes past planned wake that cap the verdict at YELLOW
+  lossLimitPct:1.0, gainLimitPct:0.5
+};
+const DEFAULT_SETTINGS = { setupComplete:false, wakeTime:"05:45", schedule:DEFAULT_SCHEDULE, program:DEFAULT_PROGRAM, thresholds:DEFAULT_THRESHOLDS };
 
 let settings = load(LS.settings, DEFAULT_SETTINGS);
 let entries  = load(LS.entries, {});          // { "YYYY-MM-DD": entry }
 let meta     = load(LS.meta, { lastExport:null, photoAckMonth:null, deload:null });
+/* Migration: settings stored before thresholds became editable get the defaults
+   merged in; entries need no transformation — new check-in fields are optional. */
+settings.thresholds = { ...DEFAULT_THRESHOLDS, ...(settings.thresholds || {}) };
 
 /* ---------- date helpers ---------- */
 function dkey(d){ const p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
@@ -257,28 +271,35 @@ function musclesForDay(day){
    READINESS ENGINE
    ============================================================ */
 function computeVerdict(ci, date){
+  const t = settings.thresholds;
   const day = scheduleFor(date);
   const tue = date.getDay()===2;                  // Tuesday caution rule
-  const bbGreen = tue ? 60 : 50;
+  const bbGreen = tue ? t.bbGreenTuesday : t.bbGreen;
   const sched = musclesForDay(day);
   const sigSore = Object.keys(ci.soreness||{}).filter(m=>ci.soreness[m]==="Significant");
   const sigToday = sigSore.filter(m=>sched.includes(m));
 
   const red = [];
-  if(ci.hrv==="Low") red.push("HRV Low");
-  if(ci.bodyBattery < 30) red.push("Body Battery "+ci.bodyBattery);
-  if(ci.sleepHours < 5.5) red.push(ci.sleepHours.toFixed(1)+" hr sleep");
-  if(sigToday.length >= 2) red.push("significant soreness in "+joinAnd(sigToday)+" (scheduled today)");
+  if(ci.hrv===t.hrvRed) red.push("HRV "+ci.hrv);
+  if(ci.bodyBattery < t.bbRed) red.push("Body Battery "+ci.bodyBattery);
+  if(ci.sleepHours < t.sleepRed) red.push(ci.sleepHours.toFixed(1)+" hr sleep");
+  if(sigToday.length >= t.soreRed) red.push("significant soreness in "+joinAnd(sigToday)+" (scheduled today)");
   if(red.length) return { verdict:"RED", reason:"RED. "+cap(joinAnd(red))+"." };
 
+  /* Sleep-in rule: waking well past plan caps the day at YELLOW */
+  const lateMins = ci.wakeActual ? hmToMins(ci.wakeActual) - hmToMins(settings.wakeTime) : 0;
+  const sleptIn = lateMins >= t.sleepInMins;
+
   const fails = [];
-  if(ci.hrv!=="Balanced") fails.push("HRV "+ci.hrv);
+  if(ci.hrv!==t.hrvGreen) fails.push("HRV "+ci.hrv);
   if(ci.bodyBattery < bbGreen) fails.push("Body Battery "+ci.bodyBattery+" below "+bbGreen+(tue?" (Tuesday threshold — Monday basketball is the largest recovery cost)":""));
-  if(ci.sleepHours < 6.5) fails.push(ci.sleepHours.toFixed(1)+" hr sleep, under 6.5");
-  if(ci.energy < 3) fails.push("energy "+ci.energy+"/5");
+  if(ci.sleepHours < t.sleepGreen) fails.push(ci.sleepHours.toFixed(1)+" hr sleep, under "+t.sleepGreen);
+  if(ci.energy < t.energyGreen) fails.push("energy "+ci.energy+"/5");
   if(!fails.length){
-    return { verdict:"GREEN", reason:"GREEN. HRV Balanced, Body Battery "+ci.bodyBattery+", "+ci.sleepHours.toFixed(1)+" hr sleep, energy "+ci.energy+"/5." };
+    if(sleptIn) return { verdict:"YELLOW", reason:"YELLOW. Woke "+lateMins+" min past the "+fmt12(settings.wakeTime)+" plan. Your body took the extra sleep because it needed it." };
+    return { verdict:"GREEN", reason:"GREEN. HRV "+ci.hrv+", Body Battery "+ci.bodyBattery+", "+ci.sleepHours.toFixed(1)+" hr sleep, energy "+ci.energy+"/5." };
   }
+  if(sleptIn) fails.push("woke "+lateMins+" min past plan — your body took the extra sleep because it needed it");
   return { verdict:"YELLOW", reason:"YELLOW. "+cap(joinAnd(fails))+"." };
 }
 
@@ -331,6 +352,12 @@ function compress(exs, budget, restBump){
   return { kept, dropped, stillOver: estMin(kept,restBump) > budget };
 }
 
+function missedCard(extraNotes){
+  return { heading:"Missed session", items:[
+    {name:"No training today", detail:"The week stays as scheduled. Nothing moves, nothing doubles.", muscle:""}],
+    notes:["One missed session costs nothing. Compensating for it is what costs.",
+           "Step goal is 10,000 today. Walking still counts."].concat(extraNotes||[]) };
+}
 function walkMobilityCard(headline){
   return { heading:headline, items:[
     {name:"Walk", detail:"20 min, easy pace", muscle:""},
@@ -352,6 +379,7 @@ function buildWorkout(ci, date, rawVerdict){
     if(rawVerdict==="RED"){ const c = walkMobilityCard("Basketball is off. Walk and mobility instead."); c.notes.push(...notes); return c; }
     const items = [{name:"Basketball", detail:"Evening game", muscle:""}];
     if(v==="YELLOW") notes.push("YELLOW protocol: play, but cap intensity — no extra runs, sub out when winded, skip pre-game lifting.");
+    if(ci.timeAvailable===0) notes.push("Basketball is in the evening. Morning availability does not matter today.");
     return { heading: day.name, items, notes };
   }
 
@@ -360,6 +388,8 @@ function buildWorkout(ci, date, rawVerdict){
       if(ci.bodyBattery < 30) return { heading:"Full rest today", items:[{name:"Rest", detail:"Body Battery "+ci.bodyBattery+". No cardio.", muscle:""}], notes:[RED_MSG, ...notes] };
       return { heading:"20-minute walk", items:[{name:"Walk", detail:"20 min, easy pace, flat route", muscle:""}], notes:[RED_MSG, ...notes] };
     }
+    const evening = ci.timeAvailable===0;
+    if(evening && ci.eveningWindow===false){ const c = missedCard(notes); return c; }
     let mins = day.minutes || 45;
     let mode = "Zone 2 — nasal-breathing pace, HR in zone 2";
     if(v==="YELLOW"){
@@ -367,12 +397,13 @@ function buildWorkout(ci, date, rawVerdict){
       if(ci.energy <= 2){ mode = "Brisk walk — energy "+ci.energy+"/5, keep it conversational"; }
       notes.push("YELLOW protocol: session reduced to 30 min.");
     }
-    if(ci.timeAvailable < mins + 10){
+    if(!evening && ci.timeAvailable < mins + 10){
       mins = Math.max(20, ci.timeAvailable - 10);
       notes.push("Compressed to fit the "+ci.timeAvailable+"-minute window.");
     }
+    if(evening) notes.push("Rescheduled to this evening. Zone 2 works at any hour.");
     const c = { heading: day.name, items:[{name:mode.split(" — ")[0], detail:mins+" min. "+mode.split(" — ")[1], muscle:""}], notes };
-    c.finishBy = mins + 10;
+    if(!evening) c.finishBy = mins + 10;
     return c;
   }
 
@@ -380,6 +411,9 @@ function buildWorkout(ci, date, rawVerdict){
   const prog = programFor(day);
   if(!prog) return { heading:"No program assigned", items:[], notes:["Assign a program to this day in Settings."] };
   if(rawVerdict==="RED"){ const c = walkMobilityCard("Lifting is off. Walk and mobility instead."); c.notes.push("Lifting resumes tomorrow if HRV recovers."); c.notes.push(...notes); return c; }
+
+  const evening = ci.timeAvailable===0;
+  if(evening && ci.eveningWindow===false){ return missedCard(notes); }
 
   let exs = prog.exercises.map(e=>({...e}));
   const sigSore = Object.keys(ci.soreness||{}).filter(m=>ci.soreness[m]==="Significant");
@@ -400,12 +434,22 @@ function buildWorkout(ci, date, rawVerdict){
     notes.push("YELLOW protocol: one working set cut from every movement, intensity capped at RPE 7, rest extended ~45 s.");
   }
 
-  /* Time compression */
-  if(ci.timeAvailable < designedLength(day) || estMin(exs,restBump) > ci.timeAvailable){
+  /* Time compression (morning only — an evening reschedule keeps the session whole) */
+  if(!evening && (ci.timeAvailable < designedLength(day) || estMin(exs,restBump) > ci.timeAvailable)){
     const r = compress(exs, ci.timeAvailable, restBump);
     if(r.dropped.length) notes.push("Compressed to "+ci.timeAvailable+" min: dropped "+joinAnd(r.dropped)+". First compound per muscle group preserved.");
     if(r.stillOver) notes.push("Still tight. Trim rest periods to stay inside the window.");
     exs = r.kept;
+  }
+
+  /* Evening reschedule: lifting must end 2+ hours before the bedtime target */
+  if(evening){
+    const bt = bedtimeTarget(dkey(date), rawVerdict);
+    const deadline = hmToMins(bt.time) - 120;
+    const est = estMin(exs, restBump);
+    notes.push("Rescheduled to this evening. Finish by "+fmt12(minsToHM(deadline))+" — lifting ends two or more hours before the "+fmt12(bt.time)+" bedtime target. That means starting by "+fmt12(minsToHM(deadline-est))+".");
+    const r45 = compress(exs, 45, restBump);
+    if(r45.dropped.length) notes.push("Cannot make that window? Run the 45-minute version instead: drop "+joinAnd(r45.dropped)+". First compound per muscle group preserved.");
   }
 
   const items = exs.map(e=>({
@@ -413,7 +457,7 @@ function buildWorkout(ci, date, rawVerdict){
     detail:e.sets+" × "+e.reps+" — rest "+(restMin(e.rest)+restBump).toFixed(restBump?2:1).replace(/\.?0+$/,"")+" min"
   }));
   const c = { heading: prog.name, items, notes };
-  c.finishBy = estMin(exs, restBump);
+  if(!evening) c.finishBy = estMin(exs, restBump);
   return c;
 }
 
@@ -445,7 +489,9 @@ function bedtimeTarget(dateKey, verdict){
 }
 function stepGoal(dateKey, verdict){
   const day = scheduleFor(fromKey(dateKey));
-  return (day.type==="rest" || verdict==="RED") ? 10000 : 8000;
+  const e = entries[dateKey];
+  const missed = !!(e && e.checkin && e.checkin.timeAvailable===0 && e.checkin.eveningWindow===false);
+  return (day.type==="rest" || verdict==="RED" || missed) ? 10000 : 8000;
 }
 /* weight avg over calendar window [end-days+1 .. end], from check-in weights */
 function weightAvg(endKey, daysBack, offset){
@@ -589,13 +635,13 @@ function readScheduleEditor(root){
 const MUSCLES = ["Shoulders","Back","Chest","Arms","Legs"];
 function blankDraft(){
   return { hrv:null, bodyBattery:null, sleepHours:7.0, sleepScore:null, restingHR:null,
-    soreness:{}, energy:null, timeAvailable:null, weight:null,
+    wakeActual:settings.wakeTime, soreness:{}, energy:null, timeAvailable:null, eveningWindow:null, weight:null,
     proteinYesterday:null, stepsYesterday:null, notes:"",
     meas:{ waist:null, shoulders:null, chest:null, armL:null, armR:null }, measSkipped:false };
 }
-function seg(field, options, labels){
+function seg(field, options, labels, cls){
   const d = draft;
-  return '<div class="seg" data-field="'+field+'">'+options.map((o,i)=>
+  return '<div class="seg'+(cls?" "+cls:"")+'" data-field="'+field+'">'+options.map((o,i)=>
     '<button data-seg="'+o+'" class="'+(String(d[field])===String(o)?"on":"")+'">'+(labels?labels[i]:o)+'</button>').join("")+'</div>';
 }
 function ynSeg(field){
@@ -625,6 +671,8 @@ function renderCheckin(){
       '<input type="number" inputmode="numeric" min="0" max="100" data-bind="bodyBattery" value="'+(d.bodyBattery??"")+'">'+
       '<label class="f">Sleep duration</label>'+
       '<div class="stepper"><button data-action="sleepMinus">−</button><span class="val" id="sleepVal">'+d.sleepHours.toFixed(1)+' hr</span><button data-action="sleepPlus">+</button></div>'+
+      '<label class="f">Actual wake time <span class="req">plan: '+fmt12(settings.wakeTime)+'</span></label>'+
+      '<input type="time" data-bind="wakeActual" value="'+esc(d.wakeActual||settings.wakeTime)+'">'+
       '<label class="f">Garmin Sleep Score <span class="req">0–100</span></label>'+
       '<input type="number" inputmode="numeric" min="0" max="100" data-bind="sleepScore" value="'+(d.sleepScore??"")+'">'+
       '<label class="f">Resting HR <span class="req">bpm</span></label>'+
@@ -637,7 +685,8 @@ function renderCheckin(){
         return '<button data-chip="'+m+'" class="'+(lv==="Mild"?"mild":lv==="Significant"?"sig":"")+'">'+m+(lv?" · "+lv:"")+'</button>';
       }).join("")+'<button data-action="soreNone">None</button></div>'+
       '<label class="f">Subjective energy</label>'+seg("energy",[1,2,3,4,5])+
-      '<label class="f">Time available this morning</label>'+seg("timeAvailable",[90,60,45,30],["90 min","60 min","45 min","30 min"])+
+      '<label class="f">Time available this morning</label>'+seg("timeAvailable",[90,60,45,30,0],["90 min","60 min","45 min","30 min","Can&#39;t train"],"wrap")+
+      '<div id="cantTrainQ"'+(d.timeAvailable===0?"":" hidden")+'><label class="f">Realistic evening window today?</label>'+ynSeg("eveningWindow")+'</div>'+
     '</div>'+
     '<div class="card">'+
       '<label class="f">Body weight <span class="req">lb</span></label>'+
@@ -670,6 +719,7 @@ function validateDraft(d){
   if(d.restingHR==null) missing.push("Resting HR");
   if(d.energy==null) missing.push("Energy");
   if(d.timeAvailable==null) missing.push("Time available");
+  if(d.timeAvailable===0 && d.eveningWindow==null) missing.push("Evening window (Y/N)");
   return missing;
 }
 function saveCheckin(){
@@ -679,7 +729,9 @@ function saveCheckin(){
   if(missing.length){ errEl.hidden=false; errEl.textContent = "Missing: "+missing.join(", ")+"."; errEl.scrollIntoView({block:"center"}); return; }
   const key = todayKey();
   const ci = { hrv:d.hrv, bodyBattery:d.bodyBattery, sleepHours:d.sleepHours, sleepScore:d.sleepScore,
-    restingHR:d.restingHR, soreness:{...d.soreness}, energy:d.energy, timeAvailable:d.timeAvailable,
+    restingHR:d.restingHR, wakeActual:d.wakeActual||settings.wakeTime, soreness:{...d.soreness},
+    energy:d.energy, timeAvailable:d.timeAvailable,
+    eveningWindow:d.timeAvailable===0 ? d.eveningWindow : null,
     weight:d.weight, proteinYesterday:d.proteinYesterday, stepsYesterday:d.stepsYesterday,
     notes:d.notes||"", loggedAt:new Date().toISOString() };
   const { verdict, reason } = computeVerdict(ci, new Date());
@@ -749,7 +801,7 @@ function renderEvening(){
   const key = todayKey();
   const e = entries[key] || {};
   if(!evDraft){
-    evDraft = e.evening ? {...e.evening} : { bedtime: bedtimeTarget(key, e.verdict||"GREEN").time, trained:null, modifications:"", protein:null };
+    evDraft = e.evening ? { misfire:null, misfireReason:"", ...e.evening } : { bedtime: bedtimeTarget(key, e.verdict||"GREEN").time, trained:null, modifications:"", protein:null, misfire:null, misfireReason:"" };
   }
   const d = evDraft;
   $view.innerHTML =
@@ -762,6 +814,9 @@ function renderEvening(){
       (d.trained===true?'<label class="f">Modifications <span class="req">optional</span></label><input type="text" id="evMods" value="'+esc(d.modifications)+'" placeholder="as written / cut sets / swapped, etc.">':"")+
       '<label class="f">Protein target hit today</label>'+
       '<div class="seg" data-evfield="protein"><button data-seg="true" class="'+(d.protein===true?"on":"")+'">Yes</button><button data-seg="false" class="'+(d.protein===false?"on":"")+'">No</button></div>'+
+      '<label class="f">Verdict felt wrong today</label>'+
+      '<div class="seg" data-evfield="misfire"><button data-seg="true" class="'+(d.misfire===true?"on":"")+'">Yes</button><button data-seg="false" class="'+(d.misfire===false?"on":"")+'">No</button></div>'+
+      (d.misfire===true?'<label class="f">Why <span class="req">one line, optional</span></label><input type="text" id="evMisReason" value="'+esc(d.misfireReason||"")+'" placeholder="felt ready / felt cooked">':"")+
     '</div>'+
     '<button class="btn primary" data-action="saveEvening">Save evening log</button>'+
     (e.evening?'<p class="ok">Logged at '+new Date(e.evening.loggedAt).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})+'.</p>':"");
@@ -770,8 +825,11 @@ function saveEvening(){
   const key = todayKey();
   const bed = document.getElementById("evBed").value || evDraft.bedtime;
   const mods = document.getElementById("evMods");
+  const mis = document.getElementById("evMisReason");
   const entry = entries[key] || { date:key };
-  entry.evening = { bedtime:bed, trained:evDraft.trained, modifications:mods?mods.value:"", protein:evDraft.protein, loggedAt:new Date().toISOString() };
+  entry.evening = { bedtime:bed, trained:evDraft.trained, modifications:mods?mods.value:"", protein:evDraft.protein,
+    misfire:evDraft.misfire, misfireReason:evDraft.misfire===true ? (mis?mis.value:evDraft.misfireReason||"") : "",
+    loggedAt:new Date().toISOString() };
   entries[key] = entry; save(LS.entries, entries);
   evDraft = null; renderEvening();
 }
@@ -834,16 +892,17 @@ function renderReview(){
   const cur = weightAvg(key,7,0), prev = weightAvg(key,7,7);
   let rocHtml = "", rocSentence = "Not enough weight entries yet to judge the trend.";
   let pct = null;
+  const tt = settings.thresholds;
   if(cur!=null && prev!=null){
     pct = (cur-prev)/prev*100;
     const rhrCur = avg(rhr7), rhrPrev = avg(series(lastNKeys(14,key).slice(0,7), e=>e.checkin?e.checkin.restingHR:null));
     const rhrRising = rhrCur!=null && rhrPrev!=null && (rhrCur-rhrPrev) >= 2;
-    if(pct < -1){
-      rocHtml = '<div class="note warn">Losing '+Math.abs(pct).toFixed(1)+'% per week — faster than the 1% limit. Likely muscle loss risk. Raise calories slightly.</div>';
+    if(pct < -tt.lossLimitPct){
+      rocHtml = '<div class="note warn">Losing '+Math.abs(pct).toFixed(1)+'% per week — faster than the '+tt.lossLimitPct+'% limit. Likely muscle loss risk. Raise calories slightly.</div>';
       rocSentence = "Weight is dropping "+Math.abs(pct).toFixed(1)+"% per week, past the muscle-preservation limit; calories go up slightly.";
       if(rhrRising) rocHtml += '<div class="note warn">Weight dropping fast and resting HR up '+(rhrCur-rhrPrev).toFixed(1)+' bpm. Strong under-eating signal. Increase intake.</div>';
-    } else if(pct > 0.5){
-      rocHtml = '<div class="note warn">Gaining '+pct.toFixed(1)+'% per week — above the 0.5% ceiling. Surplus creep. Review intake.</div>';
+    } else if(pct > tt.gainLimitPct){
+      rocHtml = '<div class="note warn">Gaining '+pct.toFixed(1)+'% per week — above the '+tt.gainLimitPct+'% ceiling. Surplus creep. Review intake.</div>';
       rocSentence = "Weight is up "+pct.toFixed(1)+"% on the week, above the surplus ceiling; intake gets reviewed.";
     } else {
       rocHtml = '<div class="note">'+(pct>=0?"+":"")+pct.toFixed(1)+'% week over week. On track for recomposition.</div>';
@@ -891,6 +950,17 @@ function renderReview(){
   const bedSd = sd(beds);
   const wtRoll = k14.map((k,i)=>weightAvg(k,7,0)); // rolling 7-day avg across 14 days
 
+  /* verdict misfires logged this month */
+  const monthKey = key.slice(0,7);
+  const misfires = Object.values(entries)
+    .filter(e=>e.date && e.date.slice(0,7)===monthKey && e.evening && e.evening.misfire===true)
+    .sort((a,b)=>a.date<b.date?-1:1);
+  const misHtml = '<div class="card"><h3>Verdict misfires — this month</h3>'+
+    (misfires.length
+      ? misfires.map(e=>'<div class="out"><span class="k">'+e.date.slice(5)+' · '+(e.verdict||"—")+'</span><span class="x" style="font-weight:400;color:var(--ink2)">'+esc(e.evening.misfireReason||"no reason given")+'</span></div>').join("")+
+        '<p class="hint">Tune one threshold at a time in Settings, then watch the next week.</p>'
+      : '<p class="hint">None logged. The evening log has a verdict-felt-wrong toggle.</p>')+'</div>';
+
   $view.innerHTML =
     '<h2>Weekly review'+(isSunday?"":" (preview — auto-generated Sundays)")+'</h2>'+
     '<div class="card"><p class="summary">'+esc(summary)+'</p></div>'+
@@ -915,7 +985,8 @@ function renderReview(){
       '<div class="out"><span class="k">Verdicts</span><span class="x">'+counts.GREEN+' G · '+counts.YELLOW+' Y · '+counts.RED+' R</span></div>'+
       '<div class="out"><span class="k">Protein</span><span class="x">'+(pPct!=null?pPct+"%":"no data")+'</span></div>'+
       '<div class="out"><span class="k">Steps</span><span class="x">'+(sPct!=null?sPct+"%":"no data")+'</span></div>'+
-    '</div>';
+    '</div>'+
+    misHtml;
 }
 
 /* ============================================================
@@ -925,10 +996,11 @@ function renderSettings(){
   const lastExp = meta.lastExport ? new Date(meta.lastExport).toLocaleDateString() : "never";
   $view.innerHTML =
     '<h2>Settings</h2>'+
-    '<div class="card"><h3>Wake time</h3>'+
+    '<div class="card"><h3>Planned wake time</h3>'+
       '<input type="time" id="setWake" value="'+esc(settings.wakeTime)+'">'+
-      '<p class="hint">Bedtime target = wake time − 8 hr (− 30 min on RED days or with 3-day sleep debt over 2 hr).</p>'+
+      '<p class="hint">Bedtime target = wake time − 8 hr (− 30 min on RED days or with 3-day sleep debt over 2 hr). The check-in defaults its actual-wake field to this; waking '+settings.thresholds.sleepInMins+'+ min late caps the verdict at YELLOW.</p>'+
       '<button class="btn" data-action="saveWake">Save wake time</button></div>'+
+    thresholdsCardHtml()+
     '<div class="card"><h3>Weekly schedule</h3>'+scheduleEditorHtml(settings.schedule)+
       '<button class="btn" data-action="saveSchedule">Save schedule</button></div>'+
     '<div class="card"><h3>Program JSON</h3>'+
@@ -944,6 +1016,29 @@ function renderSettings(){
       '<div class="err" id="impErr" hidden></div><div class="ok" id="impOk" hidden></div>'+
       '<hr class="divider">'+
       '<button class="btn danger" data-action="wipe">Delete all data</button></div>';
+}
+function thresholdsCardHtml(){
+  const t = settings.thresholds;
+  const num = (k,label,step)=>'<div class="mrow"><label>'+label+'</label><input type="number" inputmode="decimal" step="'+(step||1)+'" data-th="'+k+'" value="'+t[k]+'"></div>';
+  const sel = (k,label)=>'<div class="mrow"><label>'+label+'</label><select data-th="'+k+'">'+
+    ["Balanced","Unbalanced","Low"].map(o=>'<option value="'+o+'"'+(t[k]===o?" selected":"")+'>'+o+'</option>').join("")+'</select></div>';
+  return '<div class="card"><h3>Readiness thresholds</h3>'+
+    '<p class="hint">The engine reads these directly. Tune one at a time, after a logged misfire, not after a feeling.</p>'+
+    sel("hrvGreen","HRV required for GREEN")+
+    sel("hrvRed","HRV that forces RED")+
+    num("bbGreen","Body Battery for GREEN")+
+    num("bbGreenTuesday","Body Battery for GREEN, Tuesday")+
+    num("bbRed","Body Battery below → RED")+
+    num("sleepGreen","Sleep hours for GREEN",0.5)+
+    num("sleepRed","Sleep hours below → RED",0.5)+
+    num("energyGreen","Energy (1–5) for GREEN")+
+    num("soreRed","Significant-sore regions → RED")+
+    num("sleepInMins","Sleep-in cap trigger, min late",5)+
+    num("lossLimitPct","Weekly weight-loss limit, %",0.1)+
+    num("gainLimitPct","Weekly weight-gain limit, %",0.1)+
+    '<div class="ok" id="thOk" hidden>Thresholds saved.</div>'+
+    '<button class="btn" data-action="saveThresholds">Save thresholds</button>'+
+    '<button class="btn quiet" data-action="restoreThresholds">Restore defaults</button></div>';
 }
 function doExport(){
   const payload = {
@@ -1009,10 +1104,12 @@ document.addEventListener("click", ev=>{
     if(group.dataset.evfield){
       const bed = document.getElementById("evBed"); if(bed && bed.value) evDraft.bedtime = bed.value;
       const mods = document.getElementById("evMods"); if(mods) evDraft.modifications = mods.value;
+      const mr = document.getElementById("evMisReason"); if(mr) evDraft.misfireReason = mr.value;
       evDraft[field]=val; renderEvening(); return;
     }
     draft[field]=val;
     group.querySelectorAll("button").forEach(b=>b.classList.toggle("on", b===segBtn));
+    if(field==="timeAvailable"){ const q=document.getElementById("cantTrainQ"); if(q) q.hidden = (val!==0); }
     return;
   }
   const chip = ev.target.closest("[data-chip]");
@@ -1053,6 +1150,17 @@ document.addEventListener("click", ev=>{
   }
   else if(a==="clearDeload"){ meta.deload=null; save(LS.meta,meta); render(); }
   else if(a==="saveWake"){ settings.wakeTime=document.getElementById("setWake").value||settings.wakeTime; save(LS.settings,settings); render(); }
+  else if(a==="saveThresholds"){
+    const t = {...settings.thresholds};
+    document.querySelectorAll("[data-th]").forEach(el=>{
+      const k = el.dataset.th;
+      if(el.tagName==="SELECT"){ t[k] = el.value; }
+      else { const v = parseFloat(el.value); t[k] = isNaN(v) ? DEFAULT_THRESHOLDS[k] : v; }
+    });
+    settings.thresholds = t; save(LS.settings, settings);
+    const ok = document.getElementById("thOk"); if(ok) ok.hidden = false;
+  }
+  else if(a==="restoreThresholds"){ settings.thresholds = {...DEFAULT_THRESHOLDS}; save(LS.settings, settings); render(); }
   else if(a==="saveSchedule"){ settings.schedule=readScheduleEditor($view); save(LS.settings,settings); render(); }
   else if(a==="saveProgram"){
     const errEl=document.getElementById("progErr"), okEl=document.getElementById("progOk");
@@ -1083,7 +1191,7 @@ document.addEventListener("click", ev=>{
     try{
       const obj = JSON.parse(document.getElementById("suProg").value);
       const bad = validateProgram(obj); if(bad) throw new Error(bad);
-      settings = { setupComplete:true, wakeTime:setupState.wakeTime, schedule:setupState.schedule, program:obj };
+      settings = { setupComplete:true, wakeTime:setupState.wakeTime, schedule:setupState.schedule, program:obj, thresholds:{...settings.thresholds} };
       save(LS.settings, settings);
       setupState = null; setTab("today");
     }catch(ex){ errEl.hidden=false; errEl.textContent = ex.message; }
@@ -1093,7 +1201,7 @@ document.addEventListener("input", ev=>{
   const b = ev.target.closest("[data-bind]");
   if(b && draft){
     const f = b.dataset.bind;
-    if(f==="notes") draft.notes = b.value;
+    if(f==="notes" || f==="wakeActual") draft[f] = b.value;
     else draft[f] = b.value==="" ? null : parseFloat(b.value);
     return;
   }
@@ -1111,7 +1219,7 @@ document.addEventListener("change", ev=>{
 function syncInputs(){
   document.querySelectorAll("[data-bind]").forEach(b=>{
     const f=b.dataset.bind;
-    if(f==="notes") draft.notes=b.value;
+    if(f==="notes" || f==="wakeActual") draft[f]=b.value;
     else draft[f]=b.value===""?null:parseFloat(b.value);
   });
 }
