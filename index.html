@@ -177,44 +177,39 @@ function load(key, fallback){ try{ const v = localStorage.getItem(key); return v
 function save(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
 
 const DEFAULT_PROGRAM = {
-  upperA: { name:"Upper A — V-taper", length:60, exercises:[
-    {name:"Weighted Pull-up",                muscle:"Back",      kind:"compound",  sets:4, reps:"6-8",   rest:2.5},
-    {name:"Standing Overhead Press",         muscle:"Shoulders", kind:"compound",  sets:4, reps:"6-8",   rest:2.5},
-    {name:"Chest-Supported Row",             muscle:"Back",      kind:"compound",  sets:3, reps:"8-10",  rest:2},
-    {name:"Incline Dumbbell Press",          muscle:"Chest",     kind:"compound",  sets:3, reps:"8-10",  rest:2},
-    {name:"Dumbbell Lateral Raise",          muscle:"Shoulders", kind:"isolation", sets:4, reps:"12-15", rest:1.5},
-    {name:"EZ-Bar Curl",                     muscle:"Arms",      kind:"isolation", sets:3, reps:"10-12", rest:1.5},
-    {name:"Overhead Cable Triceps Extension",muscle:"Arms",      kind:"isolation", sets:3, reps:"10-12", rest:1.5}
+  upperA: { name:"Day A — Chest + Shoulders", length:60, exercises:[
+    {name:"Barbell Bench Press (heavy)",                muscle:"Chest",     kind:"compound",  sets:4, reps:"5-6",   rest:3},
+    {name:"Overhead Press",                             muscle:"Shoulders", kind:"compound",  sets:3, reps:"6-8",   rest:2},
+    {name:"Machine Row",                                muscle:"Back",      kind:"compound",  sets:3, reps:"8-10",  rest:1.5},
+    {name:"Back Squat (only heavy leg work)",           muscle:"Legs",      kind:"compound",  sets:3, reps:"6-8",   rest:2},
+    {name:"Wide-Grip Upright Row / Plate Lateral Raise",muscle:"Shoulders", kind:"isolation", sets:3, reps:"12-15", rest:0.75},
+    {name:"Barbell Shrug",                              muscle:"Back",      kind:"isolation", sets:3, reps:"10-12", rest:1}
   ]},
-  upperB: { name:"Upper B", length:60, exercises:[
-    {name:"Wide-Grip Lat Pulldown",   muscle:"Back",      kind:"compound",  sets:4, reps:"8-10",  rest:2},
-    {name:"Seated Dumbbell Press",    muscle:"Shoulders", kind:"compound",  sets:4, reps:"8-10",  rest:2.5},
-    {name:"Single-Arm Cable Row",     muscle:"Back",      kind:"compound",  sets:3, reps:"10-12", rest:2},
-    {name:"Weighted Dip",             muscle:"Chest",     kind:"compound",  sets:3, reps:"6-10",  rest:2.5},
-    {name:"Cable Lateral Raise",      muscle:"Shoulders", kind:"isolation", sets:4, reps:"12-15", rest:1.5},
-    {name:"Incline Dumbbell Curl",    muscle:"Arms",      kind:"isolation", sets:3, reps:"10-12", rest:1.5},
-    {name:"Cable Pressdown",          muscle:"Arms",      kind:"isolation", sets:3, reps:"12-15", rest:1.5}
+  upperB: { name:"Day B — Shoulders + Back Width", length:60, exercises:[
+    {name:"Overhead Press (heavy)",                     muscle:"Shoulders", kind:"compound",  sets:4, reps:"5-6",   rest:3},
+    {name:"Incline Bench Press",                        muscle:"Chest",     kind:"compound",  sets:3, reps:"8-10",  rest:1.5},
+    {name:"Lat Pulldown",                               muscle:"Back",      kind:"compound",  sets:3, reps:"8-10",  rest:1.5},
+    {name:"Romanian Deadlift (light-moderate)",         muscle:"Legs",      kind:"compound",  sets:2, reps:"8-10",  rest:2},
+    {name:"Behind-the-Back Barbell Shrug",              muscle:"Back",      kind:"isolation", sets:3, reps:"10-12", rest:1},
+    {name:"Barbell Front Raise / Lateral Raise",        muscle:"Shoulders", kind:"isolation", sets:2, reps:"12-15", rest:0.75}
   ]},
-  fullUpper: { name:"Full Upper + Minimal Legs", length:75, exercises:[
-    {name:"Pull-up",                  muscle:"Back",      kind:"compound",  sets:4, reps:"8-10",  rest:2},
-    {name:"Incline Barbell Press",    muscle:"Chest",     kind:"compound",  sets:4, reps:"6-8",   rest:2.5},
-    {name:"One-Arm Dumbbell Row",     muscle:"Back",      kind:"compound",  sets:3, reps:"10-12", rest:2},
-    {name:"Arnold Press",             muscle:"Shoulders", kind:"compound",  sets:3, reps:"8-10",  rest:2},
-    {name:"Leg Press",                muscle:"Legs",      kind:"compound",  sets:2, reps:"10-12", rest:2},
-    {name:"Romanian Deadlift",        muscle:"Legs",      kind:"compound",  sets:2, reps:"8-10",  rest:2},
-    {name:"Dumbbell Lateral Raise",   muscle:"Shoulders", kind:"isolation", sets:3, reps:"12-15", rest:1.5},
-    {name:"Hammer Curl",              muscle:"Arms",      kind:"isolation", sets:2, reps:"10-12", rest:1.5},
-    {name:"Rope Pressdown",           muscle:"Arms",      kind:"isolation", sets:2, reps:"12-15", rest:1.5}
+  fullUpper: { name:"Day C — Chest Volume + Upper Back", length:60, exercises:[
+    {name:"Barbell Bench Press",                        muscle:"Chest",     kind:"compound",  sets:3, reps:"8-10",  rest:2},
+    {name:"Barbell Row (elbows flared, upper back)",    muscle:"Back",      kind:"compound",  sets:3, reps:"8-10",  rest:1.5},
+    {name:"Overhead Press / High-Incline Press",        muscle:"Shoulders", kind:"compound",  sets:3, reps:"8-10",  rest:1.5},
+    {name:"Wide-Grip Lat Pulldown",                     muscle:"Back",      kind:"compound",  sets:3, reps:"10-12", rest:1.5},
+    {name:"Shrug + Lateral Raise (superset)",           muscle:"Shoulders", kind:"isolation", sets:3, reps:"12-15", rest:0.75},
+    {name:"Skullcrusher + Curl (superset)",             muscle:"Arms",      kind:"isolation", sets:2, reps:"12",    rest:0.75}
   ]}
 };
 const DEFAULT_SCHEDULE = {
   "0": {name:"Rest + weekly review",      type:"rest"},
   "1": {name:"Basketball (evening)",      type:"basketball"},
-  "2": {name:"Lift — Upper A",            type:"lift",  programKey:"upperA"},
-  "3": {name:"Zone 2 cardio",             type:"zone2", minutes:45},
-  "4": {name:"Lift — Upper B",            type:"lift",  programKey:"upperB"},
-  "5": {name:"Zone 2 cardio",             type:"zone2", minutes:45},
-  "6": {name:"Lift — Full upper",         type:"lift",  programKey:"fullUpper"}
+  "2": {name:"Lift — Day A: Chest + Shoulders",       type:"lift",  programKey:"upperA"},
+  "3": {name:"Zone 2 cardio",                         type:"zone2", minutes:45},
+  "4": {name:"Lift — Day B: Shoulders + Back Width",  type:"lift",  programKey:"upperB"},
+  "5": {name:"Zone 2 cardio",                         type:"zone2", minutes:45},
+  "6": {name:"Lift — Day C: Chest + Upper Back",      type:"lift",  programKey:"fullUpper"}
 };
 const DEFAULT_THRESHOLDS = {
   hrvGreen:"Balanced",   // HRV status required for GREEN
@@ -233,6 +228,18 @@ let meta     = load(LS.meta, { lastExport:null, photoAckMonth:null, deload:null 
 /* Migration: settings stored before thresholds became editable get the defaults
    merged in; entries need no transformation — new check-in fields are optional. */
 settings.thresholds = { ...DEFAULT_THRESHOLDS, ...(settings.thresholds || {}) };
+/* One-time program refresh: if the stored program is still the original shipped
+   V-taper template (never customized), replace it with the current default.
+   A pasted or edited program has a different name and is left untouched. */
+if(settings.program && settings.program.upperA && settings.program.upperA.name==="Upper A — V-taper"){
+  settings.program = JSON.parse(JSON.stringify(DEFAULT_PROGRAM));
+  const oldNames = { "2":"Lift — Upper A", "4":"Lift — Upper B", "6":"Lift — Full upper" };
+  for(const k in oldNames){
+    if(settings.schedule && settings.schedule[k] && settings.schedule[k].name===oldNames[k])
+      settings.schedule[k].name = DEFAULT_SCHEDULE[k].name;
+  }
+  if(settings.setupComplete) save(LS.settings, settings);
+}
 
 /* ---------- date helpers ---------- */
 function dkey(d){ const p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
