@@ -1,5 +1,5 @@
 /* Morning Protocol service worker — offline cache, no network calls beyond same-origin assets. */
-const CACHE = "mp-v3";
+const CACHE = "mp-v4";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", e => {

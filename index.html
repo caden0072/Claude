@@ -153,6 +153,25 @@ nav.tabs button.on{color:var(--ink); background:var(--surface2);}
 .mrow{display:flex; gap:10px; margin:8px 0; align-items:center;}
 .mrow label{flex:1; color:var(--ink2);}
 .mrow input{width:110px; flex-shrink:0;}
+.lrow{display:flex; gap:10px; align-items:center; margin-top:8px;}
+.lrow input{width:110px; text-align:center; font-size:1.25rem;}
+/* Print: Quarterly review → clean one-page board sheet. White ground, black
+   ink, big numbers, no app chrome. */
+@media print{
+  body{background:#fff !important; color:#000 !important; padding:0; font-size:13pt;}
+  header.top, nav.tabs, .no-print, .banner{display:none !important;}
+  main{max-width:100%; padding:0;}
+  .card, .tile{background:#fff !important; border:1px solid #999; break-inside:avoid;}
+  h2, h3, p, span, div, label, .out .k, .out .x, .tile .tl, .tile .big, .tile .delta{color:#000 !important;}
+  .hint{color:#444 !important; font-size:9pt;}
+  h2{font-size:22pt; margin:0 0 6pt;}
+  h3{font-size:13pt;}
+  .big{font-size:26pt;}
+  .out{border-bottom:1px solid #ddd;}
+  .spark-line{stroke:#000 !important;}
+  .spark-dot{fill:#000 !important; stroke:#fff !important;}
+  .btn, .seg, .chips, .stepper, input, textarea, select{display:none !important;}
+}
 </style>
 </head>
 <body data-palette="#3987e5">
@@ -220,7 +239,20 @@ const DEFAULT_THRESHOLDS = {
   sleepInMins:60,        // minutes past planned wake that cap the verdict at YELLOW
   lossLimitPct:1.0, gainLimitPct:0.5
 };
-const DEFAULT_SETTINGS = { setupComplete:false, wakeTime:"05:45", schedule:DEFAULT_SCHEDULE, program:DEFAULT_PROGRAM, thresholds:DEFAULT_THRESHOLDS };
+const PAIN_REGIONS = ["Shoulder L","Shoulder R","Elbow","Wrist","Knee L","Knee R","Ankle L","Ankle R","Low back","Neck"];
+const SHARP_MSG = "Sharp pain is information, not something to train through. If it persists 7+ days, get it assessed.";
+/* Pain substitution table: region matches the pain chip by prefix ("Shoulder"
+   covers Shoulder L/R), exercise matches by name-contains, empty sub drops the
+   exercise. Editable in Settings. */
+const DEFAULT_SUBS = [
+  {region:"Shoulder", exercise:"Overhead Press",     sub:"Landmine Press or High-Incline Press"},
+  {region:"Low back", exercise:"Romanian Deadlift",  sub:"Leg Press, light, or skip"},
+  {region:"Low back", exercise:"Back Squat",         sub:"Leg Press or skip"},
+  {region:"Wrist",    exercise:"Bench Press",        sub:"Dumbbell Bench Press, neutral grip"},
+  {region:"Wrist",    exercise:"Overhead Press",     sub:"Dumbbell Shoulder Press, neutral grip"},
+  {region:"Knee",     exercise:"Squat",              sub:"Leg Press or skip"}
+];
+const DEFAULT_SETTINGS = { setupComplete:false, wakeTime:"05:45", schedule:DEFAULT_SCHEDULE, program:DEFAULT_PROGRAM, thresholds:DEFAULT_THRESHOLDS, subs:DEFAULT_SUBS, quarterStart:null };
 
 let settings = load(LS.settings, DEFAULT_SETTINGS);
 let entries  = load(LS.entries, {});          // { "YYYY-MM-DD": entry }
@@ -240,6 +272,15 @@ if(settings.program && settings.program.upperA && settings.program.upperA.name==
   }
   if(settings.setupComplete) save(LS.settings, settings);
 }
+/* Migration: pain substitutions, quarterly start date, pause state. All are
+   additive — entries never need transformation, old ones load as-is. */
+if(!Array.isArray(settings.subs)) settings.subs = JSON.parse(JSON.stringify(DEFAULT_SUBS));
+if(!settings.quarterStart){
+  const firstKey = Object.keys(entries).sort()[0];
+  settings.quarterStart = firstKey || todayKey();
+}
+meta = { lastExport:null, photoAckMonth:null, deload:null, pause:{active:false}, easeIn:false, ...meta };
+if(!meta.pause) meta.pause = {active:false};
 
 /* ---------- date helpers ---------- */
 function dkey(d){ const p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
@@ -277,13 +318,50 @@ function musclesForDay(day){
 /* ============================================================
    READINESS ENGINE
    ============================================================ */
-function computeVerdict(ci, date){
+/* Caution rule: the day after a large recovery cost, GREEN requires the higher
+   Body Battery threshold. Fires after a scheduled basketball day (the default
+   Tuesday tightening) or after a logged Hard unscheduled activity. */
+function cautionFor(date){
+  const out = [];
+  if(scheduleFor(addDays(date,-1)).type==="basketball") out.push("basketball yesterday");
+  const y = entries[dkey(addDays(date,-1))];
+  if(y && y.activity && y.activity.intensity==="Hard") out.push("hard unscheduled activity yesterday");
+  return out;
+}
+/* Today's soreness merged with soreness logged on yesterday's unscheduled activity. */
+function effSoreness(ci, date){
+  const sore = {...(ci.soreness||{})}; const src = {};
+  const y = entries[dkey(addDays(date,-1))];
+  if(y && y.activity && y.activity.soreness){
+    for(const m in y.activity.soreness){
+      const lv = y.activity.soreness[m];
+      if(!sore[m]){ sore[m] = lv; src[m] = "activity"; }
+      else if(lv==="Significant" && sore[m]==="Mild") sore[m] = "Significant";
+    }
+  }
+  return { sore, src };
+}
+/* Today's pain merged with pain logged on yesterday's unscheduled activity. */
+function effPain(ci, date){
+  const pain = {...(ci.pain||{})}; const src = {};
+  const y = entries[dkey(addDays(date,-1))];
+  if(y && y.activity && y.activity.pain){
+    for(const r in y.activity.pain){
+      if(!pain[r]){ pain[r] = y.activity.pain[r]; src[r] = "activity"; }
+      else if(y.activity.pain[r]==="Sharp" && pain[r]==="Mild") pain[r] = "Sharp";
+    }
+  }
+  return { pain, src };
+}
+function computeVerdict(ci, date, opts){
+  opts = opts || {};
   const t = settings.thresholds;
   const day = scheduleFor(date);
-  const tue = date.getDay()===2;                  // Tuesday caution rule
-  const bbGreen = tue ? t.bbGreenTuesday : t.bbGreen;
+  const cautions = cautionFor(date);
+  const bbGreen = cautions.length ? t.bbGreenTuesday : t.bbGreen;
   const sched = musclesForDay(day);
-  const sigSore = Object.keys(ci.soreness||{}).filter(m=>ci.soreness[m]==="Significant");
+  const eff = effSoreness(ci, date);
+  const sigSore = Object.keys(eff.sore).filter(m=>eff.sore[m]==="Significant");
   const sigToday = sigSore.filter(m=>sched.includes(m));
 
   const red = [];
@@ -293,21 +371,24 @@ function computeVerdict(ci, date){
   if(sigToday.length >= t.soreRed) red.push("significant soreness in "+joinAnd(sigToday)+" (scheduled today)");
   if(red.length) return { verdict:"RED", reason:"RED. "+cap(joinAnd(red))+"." };
 
-  /* Sleep-in rule: waking well past plan caps the day at YELLOW */
+  /* Caps: conditions that hold an otherwise-GREEN day at YELLOW */
+  const caps = [];
   const lateMins = ci.wakeActual ? hmToMins(ci.wakeActual) - hmToMins(settings.wakeTime) : 0;
-  const sleptIn = lateMins >= t.sleepInMins;
+  if(lateMins >= t.sleepInMins) caps.push("Woke "+lateMins+" min past the "+fmt12(settings.wakeTime)+" plan. Your body took the extra sleep because it needed it.");
+  const sharp = Object.keys(ci.pain||{}).filter(r=>ci.pain[r]==="Sharp");
+  if(sharp.length) caps.push("Sharp pain: "+joinAnd(sharp)+". "+SHARP_MSG);
+  if(opts.easeIn) caps.push("First day back. Ease in.");
 
   const fails = [];
   if(ci.hrv!==t.hrvGreen) fails.push("HRV "+ci.hrv);
-  if(ci.bodyBattery < bbGreen) fails.push("Body Battery "+ci.bodyBattery+" below "+bbGreen+(tue?" (Tuesday threshold — Monday basketball is the largest recovery cost)":""));
+  if(ci.bodyBattery < bbGreen) fails.push("Body Battery "+ci.bodyBattery+" below "+bbGreen+(cautions.length?" (tightened: "+joinAnd(cautions)+")":""));
   if(ci.sleepHours < t.sleepGreen) fails.push(ci.sleepHours.toFixed(1)+" hr sleep, under "+t.sleepGreen);
   if(ci.energy < t.energyGreen) fails.push("energy "+ci.energy+"/5");
-  if(!fails.length){
-    if(sleptIn) return { verdict:"YELLOW", reason:"YELLOW. Woke "+lateMins+" min past the "+fmt12(settings.wakeTime)+" plan. Your body took the extra sleep because it needed it." };
+
+  if(!fails.length && !caps.length)
     return { verdict:"GREEN", reason:"GREEN. HRV "+ci.hrv+", Body Battery "+ci.bodyBattery+", "+ci.sleepHours.toFixed(1)+" hr sleep, energy "+ci.energy+"/5." };
-  }
-  if(sleptIn) fails.push("woke "+lateMins+" min past plan — your body took the extra sleep because it needed it");
-  return { verdict:"YELLOW", reason:"YELLOW. "+cap(joinAnd(fails))+"." };
+  if(!fails.length) return { verdict:"YELLOW", reason:"YELLOW. "+caps.join(" ") };
+  return { verdict:"YELLOW", reason:"YELLOW. "+cap(joinAnd(fails))+"."+(caps.length?" "+caps.join(" "):"") };
 }
 
 function deloadActive(date){
@@ -327,7 +408,7 @@ const RED_MSG = "Training through this costs more than it builds. Recover today,
 function restMin(r){ if(typeof r==="number") return r; const m=parseFloat(r); return isNaN(m)?2:m; }
 function estMin(exs, restBump){ return Math.round(8 + exs.reduce((s,e)=>s + e.sets*(0.75 + restMin(e.rest) + restBump), 0)); }
 
-function applySorenessSwap(exs, sigSore){
+function applySorenessSwap(exs, sigSore, src){
   const sore = exs.filter(e=>sigSore.includes(e.muscle));
   if(!sore.length) return { exs, note:null };
   const removedSets = sore.reduce((s,e)=>s+e.sets,0);
@@ -338,9 +419,33 @@ function applySorenessSwap(exs, sigSore){
     for(const e of kept){ if(toAdd<=0) break; e.sets += 1; toAdd--; added++; targets.add(e.muscle); }
   }
   const soreM = [...new Set(sore.map(e=>e.muscle))];
-  const note = joinAnd(soreM)+" significantly sore. Dropped "+joinAnd(sore.map(e=>e.name))+
+  let note = joinAnd(soreM)+" significantly sore. Dropped "+joinAnd(sore.map(e=>e.name))+
     "; moved "+added+" sets to "+joinAnd([...targets])+".";
+  const fromAct = soreM.filter(m=>src && src[m]==="activity");
+  if(fromAct.length) note += " Soreness in "+joinAnd(fromAct)+" came from yesterday's unscheduled activity.";
   return { exs:kept, note };
+}
+
+/* Pain modifies exercise selection: swap or drop exercises that load a painful
+   region, per the substitution table in Settings. */
+function applyPainSubs(exs, pain, src){
+  const notes = [], out = [];
+  const regions = Object.keys(pain);
+  for(const e of exs){
+    let rule = null, region = null;
+    for(const r of regions){
+      rule = (settings.subs||[]).find(s=>
+        r.toLowerCase().startsWith(String(s.region).toLowerCase()) &&
+        e.name.toLowerCase().includes(String(s.exercise).toLowerCase())) || null;
+      if(rule){ region = r; break; }
+    }
+    if(!rule){ out.push(e); continue; }
+    const from = src && src[region]==="activity" ? " (from yesterday's unscheduled activity)" : "";
+    if(!rule.sub){ notes.push(region+" pain"+from+": dropped "+e.name+"."); continue; }
+    notes.push(region+" pain"+from+": "+e.name+" becomes "+rule.sub+".");
+    out.push({...e, name:rule.sub});
+  }
+  return { exs:out, notes };
 }
 
 function compress(exs, budget, restBump){
@@ -422,13 +527,22 @@ function buildWorkout(ci, date, rawVerdict){
   const evening = ci.timeAvailable===0;
   if(evening && ci.eveningWindow===false){ return missedCard(notes); }
 
-  let exs = prog.exercises.map(e=>({...e}));
-  const sigSore = Object.keys(ci.soreness||{}).filter(m=>ci.soreness[m]==="Significant");
-  const soreToday = sigSore.filter(m=>exs.some(e=>e.muscle===m));
+  let exs = prog.exercises.map(e=>({...e, key:e.name}));
+
+  /* Pain targeting: pain modifies exercise selection */
+  const ep = effPain(ci, date);
+  if(Object.keys(ep.pain).length){
+    const r = applyPainSubs(exs, ep.pain, ep.src);
+    exs = r.exs; notes.push(...r.notes);
+    if(!exs.length){ const c = walkMobilityCard("Every scheduled exercise loads a painful region."); c.notes.push(SHARP_MSG); c.notes.push(...notes); return c; }
+  }
 
   /* Soreness targeting: swap sore-muscle volume to non-sore groups */
+  const es = effSoreness(ci, date);
+  const sigSore = Object.keys(es.sore).filter(m=>es.sore[m]==="Significant");
+  const soreToday = sigSore.filter(m=>exs.some(e=>e.muscle===m));
   if(soreToday.length){
-    const r = applySorenessSwap(exs, soreToday);
+    const r = applySorenessSwap(exs, soreToday, es.src);
     if(!r.exs.length){ const c = walkMobilityCard("Every scheduled muscle group is significantly sore."); c.notes.push(...notes); return c; }
     exs = r.exs; if(r.note) notes.push(r.note);
   }
@@ -460,12 +574,33 @@ function buildWorkout(ci, date, rawVerdict){
   }
 
   const items = exs.map(e=>({
-    name:e.name, muscle:e.muscle,
+    name:e.name, muscle:e.muscle, key:e.key,
     detail:e.sets+" × "+e.reps+" — rest "+(restMin(e.rest)+restBump).toFixed(restBump?2:1).replace(/\.?0+$/,"")+" min"
   }));
   const c = { heading: prog.name, items, notes };
   if(!evening) c.finishBy = estMin(exs, restBump);
   return c;
+}
+
+/* ============================================================
+   PROGRESSIVE OVERLOAD
+   ============================================================ */
+function parseReps(s){ const m = String(s).match(/(\d+)\s*-\s*(\d+)/); if(m) return [Number(m[1]),Number(m[2])]; const n = parseInt(s,10)||10; return [n,n]; }
+function lastTopSet(name, beforeKey){
+  beforeKey = beforeKey || todayKey();
+  const ks = Object.keys(entries).filter(k=>k<beforeKey && entries[k].lifts && entries[k].lifts[name]).sort();
+  if(!ks.length) return null;
+  const k = ks[ks.length-1];
+  return { ...entries[k].lifts[name], date:k };
+}
+/* "185×6 last time. Target: 185×7 or 190×5." Same weight for one more rep, or
+   +5 lb at the bottom of the range if the top of the rep range was hit. */
+function liftTargetText(ex, last){
+  if(!last) return "First log for this lift.";
+  const [lo,hi] = parseReps(ex.reps);
+  const base = last.w+"×"+last.r+" last time.";
+  if(last.r >= hi) return base+" Target: "+last.w+"×"+(last.r+1)+" or "+(last.w+5)+"×"+lo+".";
+  return base+" Target: "+last.w+"×"+(last.r+1)+".";
 }
 
 /* ============================================================
@@ -532,8 +667,8 @@ function spark(vals, color){
   }
   return '<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="none" role="img" aria-label="trend">'+
     '<line x1="'+px+'" y1="'+(h-2)+'" x2="'+(w-px)+'" y2="'+(h-2)+'" stroke="#383835" stroke-width="1"/>'+
-    '<path d="'+path+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'+
-    '<circle cx="'+lastX+'" cy="'+lastY+'" r="4.5" fill="'+color+'" stroke="#1a1a19" stroke-width="2"/>'+
+    '<path class="spark-line" d="'+path+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'+
+    '<circle class="spark-dot" cx="'+lastX+'" cy="'+lastY+'" r="4.5" fill="'+color+'" stroke="#1a1a19" stroke-width="2"/>'+
   '</svg>';
 }
 function tile(label, big, delta, sparkHtml){
@@ -561,6 +696,7 @@ function render(){
   document.getElementById("hdrDate").textContent = fmtDate(new Date());
   if(!settings.setupComplete){ renderSetup(); return; }
   if(currentTab==="today"){
+    if(meta.pause && meta.pause.active){ renderPaused(); return; }
     const e = entries[todayKey()];
     if(e && e.checkin && !draft) renderResults(); else renderCheckin();
   }
@@ -642,9 +778,19 @@ function readScheduleEditor(root){
 const MUSCLES = ["Shoulders","Back","Chest","Arms","Legs"];
 function blankDraft(){
   return { hrv:null, bodyBattery:null, sleepHours:7.0, sleepScore:null, restingHR:null,
-    wakeActual:settings.wakeTime, soreness:{}, energy:null, timeAvailable:null, eveningWindow:null, weight:null,
+    wakeActual:settings.wakeTime, soreness:{}, pain:{}, energy:null, timeAvailable:null, eveningWindow:null, weight:null,
     proteinYesterday:null, stepsYesterday:null, notes:"",
     meas:{ waist:null, shoulders:null, chest:null, armL:null, armR:null }, measSkipped:false };
+}
+/* Region chips cycling none → level1 → level2 → none. ctx picks the backing
+   draft (checkin or activity), target the field on it. */
+function chipsHtml(ctx, target, keys, levels, store){
+  return '<div class="chips" data-chips data-ctx="'+ctx+'" data-target="'+target+'" data-levels="'+levels.join(",")+'">'+
+    keys.map(k=>{
+      const lv = store[k];
+      return '<button data-chip="'+k+'" class="'+(lv===levels[0]?"mild":lv===levels[1]?"sig":"")+'">'+k+(lv?" · "+lv:"")+'</button>';
+    }).join("")+
+    '<button data-action="chipsClear">None</button></div>';
 }
 function seg(field, options, labels, cls){
   const d = draft;
@@ -662,16 +808,17 @@ function renderCheckin(){
   if(!draft){
     draft = blankDraft();
     if(existing && existing.checkin){ Object.assign(draft, JSON.parse(JSON.stringify(existing.checkin)));
+      draft.pain = draft.pain || {}; draft.soreness = draft.soreness || {};
       if(existing.measurements) { draft.meas = {...existing.measurements}; }
     }
   }
   const d = draft;
   const day = scheduleFor(new Date());
   const isSunday = new Date().getDay()===0;
-  const tue = new Date().getDay()===2;
+  const cautions = cautionFor(new Date());
   $view.innerHTML =
     '<h2>Morning check-in</h2>'+
-    '<p class="hint">'+esc(day.name)+(tue?' — Tuesday thresholds are tightened after Monday basketball.':'')+'</p>'+
+    '<p class="hint">'+esc(day.name)+(cautions.length?' — thresholds tightened: '+joinAnd(cautions)+'.':'')+'</p>'+
     '<div class="card">'+
       '<label class="f">HRV Status</label>'+seg("hrv",["Balanced","Unbalanced","Low"])+
       '<label class="f">Body Battery <span class="req">0–100</span></label>'+
@@ -687,10 +834,10 @@ function renderCheckin(){
     '</div>'+
     '<div class="card">'+
       '<label class="f">Soreness <span class="req">tap: none → mild → significant</span></label>'+
-      '<div class="chips" id="soreChips">'+MUSCLES.map(m=>{
-        const lv = d.soreness[m];
-        return '<button data-chip="'+m+'" class="'+(lv==="Mild"?"mild":lv==="Significant"?"sig":"")+'">'+m+(lv?" · "+lv:"")+'</button>';
-      }).join("")+'<button data-action="soreNone">None</button></div>'+
+      chipsHtml("checkin","soreness",MUSCLES,["Mild","Significant"],d.soreness)+
+      '<label class="f">Pain <span class="req">joints — tap: none → mild → sharp</span></label>'+
+      chipsHtml("checkin","pain",PAIN_REGIONS,["Mild","Sharp"],d.pain)+
+      '<p class="hint">Soreness modifies volume. Pain modifies exercise selection.</p>'+
       '<label class="f">Subjective energy</label>'+seg("energy",[1,2,3,4,5])+
       '<label class="f">Time available this morning</label>'+seg("timeAvailable",[90,60,45,30,0],["90 min","60 min","45 min","30 min","Can&#39;t train"],"wrap")+
       '<div id="cantTrainQ"'+(d.timeAvailable===0?"":" hidden")+'><label class="f">Realistic evening window today?</label>'+ynSeg("eveningWindow")+'</div>'+
@@ -707,7 +854,17 @@ function renderCheckin(){
     (isSunday ? measurementsCardHtml() : "")+
     '<div class="err" id="ciErr" hidden></div>'+
     '<button class="btn primary" data-action="logIt">Log it</button>'+
-    (existing && existing.checkin ? '<button class="btn quiet" data-action="cancelEdit">Cancel</button>' : "");
+    (existing && existing.checkin ? '<button class="btn quiet" data-action="cancelEdit">Cancel</button>' : "")+
+    '<button class="btn quiet" data-action="startPause">Pause mode (sick/travel)</button>';
+}
+function renderPaused(){
+  const k = todayKey(); const e = entries[k] || { date:k };
+  if(!e.checkin && !e.paused){ e.paused = true; entries[k] = e; save(LS.entries, entries); }
+  $view.innerHTML =
+    '<div class="card" style="margin-top:24px"><h3>Paused. Rest is the protocol.</h3>'+
+    '<p class="hint">No verdicts, no scheduled sessions. Paused days are excluded from adherence statistics.</p></div>'+
+    '<button class="btn" data-action="endPause">End pause</button>'+
+    '<p class="hint">The first day back is capped at YELLOW.</p>';
 }
 function measurementsCardHtml(){
   const m = draft.meas; const f = (k,l)=>'<div class="mrow"><label>'+l+'</label><input type="number" inputmode="decimal" step="0.1" data-meas="'+k+'" value="'+(m[k]??"")+'"></div>';
@@ -736,14 +893,18 @@ function saveCheckin(){
   if(missing.length){ errEl.hidden=false; errEl.textContent = "Missing: "+missing.join(", ")+"."; errEl.scrollIntoView({block:"center"}); return; }
   const key = todayKey();
   const ci = { hrv:d.hrv, bodyBattery:d.bodyBattery, sleepHours:d.sleepHours, sleepScore:d.sleepScore,
-    restingHR:d.restingHR, wakeActual:d.wakeActual||settings.wakeTime, soreness:{...d.soreness},
+    restingHR:d.restingHR, wakeActual:d.wakeActual||settings.wakeTime, soreness:{...d.soreness}, pain:{...d.pain},
     energy:d.energy, timeAvailable:d.timeAvailable,
     eveningWindow:d.timeAvailable===0 ? d.eveningWindow : null,
     weight:d.weight, proteinYesterday:d.proteinYesterday, stepsYesterday:d.stepsYesterday,
     notes:d.notes||"", loggedAt:new Date().toISOString() };
-  const { verdict, reason } = computeVerdict(ci, new Date());
   const entry = entries[key] || { date:key };
+  const easeIn = !!meta.easeIn || !!entry.easeIn;
+  const { verdict, reason } = computeVerdict(ci, new Date(), { easeIn });
   entry.checkin = ci; entry.verdict = verdict; entry.reason = reason;
+  if(easeIn) entry.easeIn = true;
+  delete entry.paused;
+  if(meta.easeIn){ meta.easeIn = false; save(LS.meta, meta); }
   const mv = Object.values(d.meas).some(v=>v!=null);
   if(new Date().getDay()===0 && !d.measSkipped && mv) entry.measurements = {...d.meas};
   entries[key] = entry;
@@ -779,8 +940,16 @@ function renderResults(){
     }
   }
 
-  let workoutBody = '<ul class="wx">'+w.items.map(it=>
-    '<li>'+(it.muscle?'<div class="mg">'+it.muscle+'</div>':'')+'<div class="nm">'+esc(it.name)+'</div><div class="dt">'+esc(it.detail)+'</div></li>').join("")+'</ul>';
+  const progMap = {};
+  if(day.type==="lift" && programFor(day)) programFor(day).exercises.forEach(x=>progMap[x.name]=x);
+  let workoutBody = '<ul class="wx">'+w.items.map(it=>{
+    let lt = "";
+    if(it.key && progMap[it.key]){
+      const last = lastTopSet(it.key);
+      if(last) lt = '<div class="hint">'+esc(liftTargetText(progMap[it.key], last))+'</div>';
+    }
+    return '<li>'+(it.muscle?'<div class="mg">'+it.muscle+'</div>':'')+'<div class="nm">'+esc(it.name)+'</div><div class="dt">'+esc(it.detail)+'</div>'+lt+'</li>';
+  }).join("")+'</ul>';
   const finishNote = (w.finishBy && (day.type==="lift"||day.type==="zone2"))
     ? '<p class="hint">~'+w.finishBy+' min. Start by '+fmt12(minsToHM(7*60+45-w.finishBy))+' to finish by 7:45 AM.</p>' : "";
 
@@ -794,12 +963,93 @@ function renderResults(){
       '<div class="out"><span class="k">Nap</span><span class="x" style="text-align:right">'+esc(nap)+'</span></div>'+
       '<div class="out"><span class="k">Bedtime tonight</span><span class="x">'+fmt12(bt.time)+
         (bt.buffered?'<div class="hint">30-min buffer: '+(e.verdict==="RED"?"RED day":"sleep debt "+bt.debt.toFixed(1)+" hr over 3 days")+'</div>':'<div class="hint">Wake '+fmt12(settings.wakeTime)+', 8 hr target</div>')+'</span></div>'+
+      '<div class="out"><span class="k">Last caffeine</span><span class="x">'+fmt12(minsToHM(hmToMins(bt.time)-540))+'</span></div>'+
       '<div class="out"><span class="k">Step goal</span><span class="x">'+steps.toLocaleString()+
         (steps===10000?'<div class="hint">Raised — walking is the recovery modality</div>':'')+'</span></div>'+
       '<div class="out"><span class="k">Weight trend</span>'+weightHtml+'</div>'+
     '</div>'+
+    (day.type==="lift" && e.verdict!=="RED" && !(ci.timeAvailable===0 && ci.eveningWindow===false)
+      ? '<button class="btn primary" data-action="goLifts">Log lifts</button>' : "")+
+    '<button class="btn" data-action="goActivity">Log unscheduled activity</button>'+
     '<button class="btn" data-action="editToday">Edit today</button>'+
     (new Date().getDay()===0 ? '<button class="btn" data-action="goReview">Open weekly review</button>' : "");
+}
+
+/* ---------- lift logger ---------- */
+function renderLifts(){
+  const day = scheduleFor(new Date());
+  const prog = programFor(day);
+  if(!prog){
+    $view.innerHTML = '<h2>Log lifts</h2><div class="card"><p>Not a lifting day.</p></div><button class="btn quiet" data-action="backToday">Back</button>';
+    return;
+  }
+  const e = entries[todayKey()] || {};
+  const logged = e.lifts || {};
+  $view.innerHTML =
+    '<h2>Log lifts — top set</h2>'+
+    '<p class="hint">Weight × reps for the heaviest working set of each lift. Leave a row blank to skip it.</p>'+
+    '<div class="card">'+prog.exercises.map(x=>{
+      const cur = logged[x.name] || {};
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--line)">'+
+        '<div class="nm" style="font-weight:700">'+esc(x.name)+'</div>'+
+        '<div class="hint">'+esc(liftTargetText(x, lastTopSet(x.name)))+'</div>'+
+        '<div class="lrow"><input type="number" inputmode="decimal" step="2.5" placeholder="lb" data-lw="'+esc(x.name)+'" value="'+(cur.w??"")+'">'+
+        '<span style="color:var(--muted)">×</span>'+
+        '<input type="number" inputmode="numeric" placeholder="reps" data-lr="'+esc(x.name)+'" value="'+(cur.r??"")+'"></div>'+
+      '</div>';
+    }).join("")+'</div>'+
+    '<button class="btn primary" data-action="saveLifts">Save lifts</button>'+
+    '<button class="btn quiet" data-action="backToday">Back</button>';
+}
+function saveLifts(){
+  const key = todayKey();
+  const entry = entries[key] || { date:key };
+  const ws = [...document.querySelectorAll("[data-lw]")];
+  const rs = [...document.querySelectorAll("[data-lr]")];
+  const lifts = {};
+  ws.forEach((inp,i)=>{
+    const w = parseFloat(inp.value), r = parseFloat(rs[i].value);
+    if(!isNaN(w) && !isNaN(r)) lifts[inp.dataset.lw] = { w, r };
+  });
+  if(Object.keys(lifts).length) entry.lifts = lifts; else delete entry.lifts;
+  entries[key] = entry; save(LS.entries, entries);
+  setTab("today");
+}
+
+/* ---------- unscheduled activity ---------- */
+let actDraft = null;
+function renderActivity(){
+  const e = entries[todayKey()] || {};
+  if(!actDraft) actDraft = e.activity ? JSON.parse(JSON.stringify(e.activity)) : { intensity:null, minutes:60, soreness:{}, pain:{} };
+  const d = actDraft;
+  d.soreness = d.soreness || {}; d.pain = d.pain || {};
+  $view.innerHTML =
+    '<h2>Unscheduled activity</h2>'+
+    '<p class="hint">What it was does not matter. What it cost does. Hard activity tightens tomorrow morning’s thresholds.</p>'+
+    '<div class="card">'+
+      '<label class="f">Intensity</label>'+
+      '<div class="seg" data-actfield="intensity">'+["Light","Moderate","Hard"].map(o=>'<button data-seg="'+o+'" class="'+(d.intensity===o?"on":"")+'">'+o+'</button>').join("")+'</div>'+
+      '<label class="f">Duration <span class="req">rough</span></label>'+
+      '<div class="stepper"><button data-action="actMinus">−</button><span class="val" id="actVal">'+d.minutes+' min</span><button data-action="actPlus">+</button></div>'+
+      '<label class="f">Anything sore from it</label>'+
+      chipsHtml("act","soreness",MUSCLES,["Mild","Significant"],d.soreness)+
+      '<label class="f">Anything hurting from it</label>'+
+      chipsHtml("act","pain",PAIN_REGIONS,["Mild","Sharp"],d.pain)+
+    '</div>'+
+    '<div class="err" id="actErr" hidden></div>'+
+    '<button class="btn primary" data-action="saveActivity">Save activity</button>'+
+    '<button class="btn quiet" data-action="backToday">Back</button>'+
+    (e.activity ? '<p class="ok">Already logged today. Saving replaces it.</p>' : "");
+}
+function saveActivity(){
+  const d = actDraft;
+  if(!d.intensity){ const el = document.getElementById("actErr"); el.hidden=false; el.textContent="Missing: intensity."; return; }
+  const key = todayKey();
+  const entry = entries[key] || { date:key };
+  entry.activity = { intensity:d.intensity, minutes:d.minutes, soreness:{...d.soreness}, pain:{...d.pain}, loggedAt:new Date().toISOString() };
+  entries[key] = entry; save(LS.entries, entries);
+  actDraft = null;
+  setTab("today");
 }
 
 /* ---------- evening log ---------- */
@@ -826,6 +1076,7 @@ function renderEvening(){
       (d.misfire===true?'<label class="f">Why <span class="req">one line, optional</span></label><input type="text" id="evMisReason" value="'+esc(d.misfireReason||"")+'" placeholder="felt ready / felt cooked">':"")+
     '</div>'+
     '<button class="btn primary" data-action="saveEvening">Save evening log</button>'+
+    '<button class="btn" data-action="goActivity">Log unscheduled activity</button>'+
     (e.evening?'<p class="ok">Logged at '+new Date(e.evening.loggedAt).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})+'.</p>':"");
 }
 function saveEvening(){
@@ -888,7 +1139,7 @@ function renderReview(){
   /* verdict + adherence */
   const counts = {GREEN:0,YELLOW:0,RED:0};
   k7.forEach(k=>{ const e=entries[k]; if(e&&e.verdict) counts[e.verdict]++; });
-  const schedDays = k7.filter(k=>scheduleFor(fromKey(k)).type!=="rest");
+  const schedDays = k7.filter(k=>scheduleFor(fromKey(k)).type!=="rest" && !(entries[k] && entries[k].paused));
   const completed = schedDays.filter(k=>entries[k] && entries[k].evening && entries[k].evening.trained===true).length;
   const pHits = k7.map(proteinHit).filter(v=>v!=null);
   const pPct = pHits.length ? Math.round(100*pHits.filter(Boolean).length/pHits.length) : null;
@@ -993,7 +1244,144 @@ function renderReview(){
       '<div class="out"><span class="k">Protein</span><span class="x">'+(pPct!=null?pPct+"%":"no data")+'</span></div>'+
       '<div class="out"><span class="k">Steps</span><span class="x">'+(sPct!=null?sPct+"%":"no data")+'</span></div>'+
     '</div>'+
-    misHtml;
+    strengthTilesHtml()+
+    painRecurrenceHtml(key)+
+    misHtml+
+    quarterListHtml();
+}
+
+/* ---------- strength tiles (top-set weight over time) ---------- */
+function liftHistory(fromKey_, toKey_){
+  const log = {};
+  Object.keys(entries).sort().forEach(k=>{
+    if(fromKey_ && k<fromKey_) return;
+    if(toKey_ && k>toKey_) return;
+    const e = entries[k];
+    if(e && e.lifts) for(const n in e.lifts) (log[n]=log[n]||[]).push({ ...e.lifts[n], date:k });
+  });
+  return log;
+}
+function strengthTilesHtml(){
+  const log = liftHistory();
+  const names = Object.keys(log).filter(n=>log[n].length>=2);
+  if(!names.length) return "";
+  return names.map(n=>{
+    const L = log[n], f = L[0], l = L[L.length-1];
+    return tile(n+" — top set", l.w+"×"+l.r,
+      (l.w-f.w>=0?"+":"")+(l.w-f.w)+" lb since "+fromKey(f.date).toLocaleDateString(undefined,{month:"short",day:"numeric"}),
+      spark(L.map(x=>x.w), "#3987e5"));
+  }).join("");
+}
+
+/* ---------- pain recurrence (last 28 days) ---------- */
+function painRecurrenceHtml(endKey){
+  const cutoff = dkey(addDays(fromKey(endKey), -27));
+  const map = {};
+  Object.keys(entries).filter(k=>k>=cutoff && k<=endKey).sort().forEach(k=>{
+    const e = entries[k];
+    const collect = p=>{ for(const r in (p||{})){ (map[r]=map[r]||{}); if(!map[r][k] || p[r]==="Sharp") map[r][k]=p[r]; } };
+    if(e.checkin) collect(e.checkin.pain);
+    if(e.activity) collect(e.activity.pain);
+  });
+  const regions = Object.keys(map).sort((a,b)=>Object.keys(map[b]).length-Object.keys(map[a]).length);
+  const fmtD = k=>fromKey(k).toLocaleDateString(undefined,{month:"short",day:"numeric"});
+  return '<div class="card"><h3>Pain recurrence — last 28 days</h3>'+
+    (regions.length
+      ? regions.map(r=>{
+          const days = Object.keys(map[r]).sort();
+          const sharps = days.filter(k=>map[r][k]==="Sharp");
+          return '<div class="out"><span class="k">'+esc(r)+' × '+days.length+'</span><span class="x" style="font-weight:400;color:var(--ink2)">'+days.map(fmtD).join(", ")+(sharps.length?' — Sharp: '+sharps.map(fmtD).join(", "):"")+'</span></div>';
+        }).join("")+'<p class="hint">Recurring pain in the same region is a pattern, not bad luck. Adjust the substitution table or the program.</p>'
+      : '<p class="hint">No pain logged in the last 28 days.</p>')+'</div>';
+}
+
+/* ============================================================
+   QUARTERLY BLOCK REVIEW
+   ============================================================ */
+function quarterBlocks(){
+  const s0 = fromKey(settings.quarterStart || todayKey());
+  const today = new Date();
+  const blocks = [];
+  for(let i=0; i<60; i++){
+    const bs = addDays(s0, i*84);
+    if(bs > today) break;
+    const be = addDays(bs, 83);
+    blocks.push({ i, from:dkey(bs), to:dkey(be), current: be >= today });
+    if(be >= today) break;
+  }
+  return blocks;
+}
+function fmtRange(a,b){
+  const o = {month:"short",day:"numeric"};
+  return fromKey(a).toLocaleDateString(undefined,o)+" – "+fromKey(b).toLocaleDateString(undefined,o);
+}
+function quarterListHtml(){
+  const qb = quarterBlocks();
+  return '<div class="card no-print"><h3>Quarterly block reviews</h3>'+
+    '<p class="hint">12-week blocks from '+esc(settings.quarterStart)+'. Start date is in Settings.</p>'+
+    qb.slice().reverse().map(b=>{
+      const wk = Math.min(12, Math.floor((new Date()-fromKey(b.from))/(7*86400000))+1);
+      return '<button class="btn" data-action="openQuarter" data-q="'+b.i+'">Block '+(b.i+1)+' — '+fmtRange(b.from,b.to)+(b.current?' · week '+wk+' of 12':'')+'</button>';
+    }).join("")+'</div>';
+}
+function renderQuarter(i){
+  const b = quarterBlocks().find(x=>x.i===i);
+  if(!b){ setTab("review"); return; }
+  const keys = Object.keys(entries).filter(k=>k>=b.from && k<=b.to).sort();
+
+  /* strength: first vs latest top set per lift inside the block */
+  const log = liftHistory(b.from, b.to);
+  const liftLines = Object.keys(log).map(n=>{
+    const L = log[n], f = L[0], l = L[L.length-1];
+    const d = l.w - f.w;
+    return '<div class="out"><span class="k">'+esc(n)+'</span><span class="x">'+
+      (L.length<2 ? f.w+"×"+f.r+" (one log)" : f.w+"×"+f.r+" → "+l.w+"×"+l.r+" ("+(d>=0?"+":"")+d+" lb)")+'</span></div>';
+  }).join("");
+
+  /* body: weight first-7 avg vs last-7 avg, ratio first vs last */
+  const wts = keys.map(k=>entries[k].checkin && entries[k].checkin.weight).filter(v=>v!=null);
+  const wFirst = wts.length ? wts.slice(0,7).reduce((a,c)=>a+c,0)/Math.min(7,wts.length) : null;
+  const wLast  = wts.length ? wts.slice(-7).reduce((a,c)=>a+c,0)/Math.min(7,wts.length) : null;
+  const meas = keys.filter(k=>entries[k].measurements && entries[k].measurements.shoulders && entries[k].measurements.waist);
+  const rFirst = meas.length ? entries[meas[0]].measurements.shoulders/entries[meas[0]].measurements.waist : null;
+  const rLast  = meas.length ? entries[meas[meas.length-1]].measurements.shoulders/entries[meas[meas.length-1]].measurements.waist : null;
+
+  /* training */
+  let scheduled=0, completed=0, paused=0;
+  const counts = {GREEN:0,YELLOW:0,RED:0};
+  let misfires=0;
+  const dayCursor = [];
+  for(let dd=fromKey(b.from); dd<=new Date() && dkey(dd)<=b.to; dd=addDays(dd,1)) dayCursor.push(dkey(dd));
+  dayCursor.forEach(k=>{
+    const e = entries[k];
+    if(e && e.paused){ paused++; return; }
+    if(scheduleFor(fromKey(k)).type!=="rest") scheduled++;
+    if(e && e.evening && e.evening.trained===true) completed++;
+    if(e && e.verdict) counts[e.verdict]++;
+    if(e && e.evening && e.evening.misfire===true) misfires++;
+  });
+  const adhPct = scheduled ? Math.round(100*completed/scheduled) : null;
+
+  $view.innerHTML =
+    '<h2>Quarterly review — Block '+(b.i+1)+'</h2>'+
+    '<p class="hint">'+fmtRange(b.from,b.to)+(b.current?' · in progress':'')+'</p>'+
+    '<div class="card"><h3>Strength — first vs latest top set</h3>'+
+      (liftLines || '<p class="hint">No lifts logged this block. The Log lifts button lives on the results screen on lifting days.</p>')+'</div>'+
+    '<div class="card"><h3>Body</h3>'+
+      '<div class="out"><span class="k">Weight</span><span class="x big">'+
+        (wFirst!=null&&wLast!=null ? wFirst.toFixed(1)+" → "+wLast.toFixed(1)+" lb" : "—")+'</span></div>'+
+      (wFirst!=null&&wLast!=null?'<p class="hint">'+((wLast-wFirst)>=0?"+":"")+(wLast-wFirst).toFixed(1)+' lb across the block ('+((wLast-wFirst)/wFirst*100).toFixed(1)+'%)</p>':"")+
+      '<div class="out"><span class="k">Shoulder-to-waist</span><span class="x big">'+
+        (rFirst!=null&&rLast!=null ? rFirst.toFixed(2)+" → "+rLast.toFixed(2) : "—")+'</span></div>'+
+      (wts.length>1 ? spark(wts, "#3987e5") : "")+'</div>'+
+    '<div class="card"><h3>Training</h3>'+
+      '<div class="out"><span class="k">Adherence</span><span class="x big">'+(adhPct!=null?adhPct+"%":"—")+'</span></div>'+
+      '<p class="hint">'+completed+' of '+scheduled+' scheduled sessions completed'+(paused?'; '+paused+' paused days excluded':'')+'</p>'+
+      '<div class="out"><span class="k">Verdicts</span><span class="x">'+counts.GREEN+' GREEN · '+counts.YELLOW+' YELLOW · '+counts.RED+' RED</span></div>'+
+      '<div class="out"><span class="k">Misfires</span><span class="x">'+misfires+'</span></div>'+
+    '</div>'+
+    '<button class="btn primary no-print" data-action="printQ">Print / Save PDF</button>'+
+    '<button class="btn quiet no-print" data-action="backReview">Back</button>';
 }
 
 /* ============================================================
@@ -1001,13 +1389,29 @@ function renderReview(){
    ============================================================ */
 function renderSettings(){
   const lastExp = meta.lastExport ? new Date(meta.lastExport).toLocaleDateString() : "never";
+  const pauseOn = meta.pause && meta.pause.active;
   $view.innerHTML =
     '<h2>Settings</h2>'+
+    '<div class="card"><h3>Pause mode (sick/travel)</h3>'+
+      '<p class="hint">'+(pauseOn
+        ? 'Active since '+esc(meta.pause.since||"today")+'. No verdicts, no scheduled sessions; paused days are excluded from all adherence statistics. The first day back is capped at YELLOW.'
+        : 'Off. Turn on when sick or traveling. While active there are no verdicts and paused days are excluded from statistics.')+'</p>'+
+      '<button class="btn'+(pauseOn?'':'')+'" data-action="'+(pauseOn?'endPause':'startPause')+'">'+(pauseOn?'End pause':'Start pause')+'</button></div>'+
     '<div class="card"><h3>Planned wake time</h3>'+
       '<input type="time" id="setWake" value="'+esc(settings.wakeTime)+'">'+
       '<p class="hint">Bedtime target = wake time − 8 hr (− 30 min on RED days or with 3-day sleep debt over 2 hr). The check-in defaults its actual-wake field to this; waking '+settings.thresholds.sleepInMins+'+ min late caps the verdict at YELLOW.</p>'+
       '<button class="btn" data-action="saveWake">Save wake time</button></div>'+
     thresholdsCardHtml()+
+    '<div class="card"><h3>Pain substitutions</h3>'+
+      '<p class="hint">When a pain region is loaded by a scheduled exercise, the exercise is swapped or dropped. region matches the chip by prefix (Shoulder covers Shoulder L/R); exercise matches by name-contains; an empty sub drops the exercise.</p>'+
+      '<textarea class="code" id="setSubs" style="min-height:150px">'+esc(JSON.stringify(settings.subs,null,1))+'</textarea>'+
+      '<div class="err" id="subsErr" hidden></div><div class="ok" id="subsOk" hidden>Substitutions saved.</div>'+
+      '<button class="btn" data-action="saveSubs">Save substitutions</button>'+
+      '<button class="btn quiet" data-action="restoreSubs">Restore defaults</button></div>'+
+    '<div class="card"><h3>Quarterly blocks</h3>'+
+      '<p class="hint">12-week review blocks are measured from this date. Reviews live at the bottom of the Review tab.</p>'+
+      '<input type="date" id="qStart" value="'+esc(settings.quarterStart)+'">'+
+      '<button class="btn" data-action="saveQStart">Save start date</button></div>'+
     '<div class="card"><h3>Weekly schedule</h3>'+scheduleEditorHtml(settings.schedule)+
       '<button class="btn" data-action="saveSchedule">Save schedule</button></div>'+
     '<div class="card"><h3>Program JSON</h3>'+
@@ -1034,7 +1438,7 @@ function thresholdsCardHtml(){
     sel("hrvGreen","HRV required for GREEN")+
     sel("hrvRed","HRV that forces RED")+
     num("bbGreen","Body Battery for GREEN")+
-    num("bbGreenTuesday","Body Battery for GREEN, Tuesday")+
+    num("bbGreenTuesday","Body Battery for GREEN after a hard day")+
     num("bbRed","Body Battery below → RED")+
     num("sleepGreen","Sleep hours for GREEN",0.5)+
     num("sleepRed","Sleep hours below → RED",0.5)+
@@ -1050,8 +1454,9 @@ function thresholdsCardHtml(){
 function doExport(){
   const payload = {
     app:"morning-protocol", version:1, exportedAt:new Date().toISOString(),
-    settings:{ wakeTime:settings.wakeTime, schedule:settings.schedule, program:settings.program },
-    meta:{ photoAckMonth:meta.photoAckMonth, deload:meta.deload },
+    settings:{ wakeTime:settings.wakeTime, schedule:settings.schedule, program:settings.program,
+      thresholds:settings.thresholds, subs:settings.subs, quarterStart:settings.quarterStart },
+    meta:{ photoAckMonth:meta.photoAckMonth, deload:meta.deload, pause:meta.pause, easeIn:meta.easeIn },
     entries:Object.keys(entries).sort().map(k=>entries[k])
   };
   const blob = new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
@@ -1104,10 +1509,15 @@ document.addEventListener("click", ev=>{
   const segBtn = ev.target.closest("[data-seg]");
   if(segBtn){
     const group = segBtn.closest(".seg");
-    const field = group.dataset.field || group.dataset.evfield;
+    const field = group.dataset.field || group.dataset.evfield || group.dataset.actfield;
     let val = segBtn.dataset.seg;
     if(group.dataset.yn || group.dataset.evfield) val = (val==="true");
     else if(NUMERIC_SEG_FIELDS.includes(field)) val = Number(val);
+    if(group.dataset.actfield){
+      actDraft[field] = val;
+      group.querySelectorAll("button").forEach(b=>b.classList.toggle("on", b===segBtn));
+      return;
+    }
     if(group.dataset.evfield){
       const bed = document.getElementById("evBed"); if(bed && bed.value) evDraft.bedtime = bed.value;
       const mods = document.getElementById("evMods"); if(mods) evDraft.modifications = mods.value;
@@ -1121,13 +1531,16 @@ document.addEventListener("click", ev=>{
   }
   const chip = ev.target.closest("[data-chip]");
   if(chip){
+    const g = chip.closest("[data-chips]");
+    const store = (g.dataset.ctx==="act" ? actDraft : draft)[g.dataset.target];
+    const levels = g.dataset.levels.split(",");
     const m = chip.dataset.chip;
-    const cur = draft.soreness[m];
-    if(!cur) draft.soreness[m]="Mild";
-    else if(cur==="Mild") draft.soreness[m]="Significant";
-    else delete draft.soreness[m];
-    const lv = draft.soreness[m];
-    chip.className = lv==="Mild"?"mild":lv==="Significant"?"sig":"";
+    const cur = store[m];
+    if(!cur) store[m]=levels[0];
+    else if(cur===levels[0]) store[m]=levels[1];
+    else delete store[m];
+    const lv = store[m];
+    chip.className = lv===levels[0]?"mild":lv===levels[1]?"sig":"";
     chip.textContent = m+(lv?" · "+lv:"");
     return;
   }
@@ -1138,11 +1551,42 @@ document.addEventListener("click", ev=>{
     draft.sleepHours = Math.min(14, Math.max(0, draft.sleepHours + (a==="sleepPlus"?0.5:-0.5)));
     document.getElementById("sleepVal").textContent = draft.sleepHours.toFixed(1)+" hr";
   }
-  else if(a==="soreNone"){ draft.soreness={}; document.querySelectorAll("#soreChips [data-chip]").forEach(c=>{ c.className=""; c.textContent=c.dataset.chip; }); }
+  else if(a==="chipsClear"){
+    const g = act.closest("[data-chips]");
+    const store = (g.dataset.ctx==="act" ? actDraft : draft)[g.dataset.target];
+    for(const k in store) delete store[k];
+    g.querySelectorAll("[data-chip]").forEach(c=>{ c.className=""; c.textContent=c.dataset.chip; });
+  }
   else if(a==="skipMeas"){ draft.measSkipped=true; syncInputs(); renderCheckin(); }
   else if(a==="unskipMeas"){ draft.measSkipped=false; syncInputs(); renderCheckin(); }
   else if(a==="logIt"){ saveCheckin(); }
   else if(a==="cancelEdit"){ draft=null; renderResults(); }
+  else if(a==="goLifts"){ renderLifts(); }
+  else if(a==="saveLifts"){ saveLifts(); }
+  else if(a==="goActivity"){ actDraft=null; renderActivity(); }
+  else if(a==="saveActivity"){ saveActivity(); }
+  else if(a==="backToday"){ actDraft=null; setTab("today"); }
+  else if(a==="actMinus"||a==="actPlus"){
+    actDraft.minutes = Math.min(300, Math.max(30, actDraft.minutes + (a==="actPlus"?30:-30)));
+    document.getElementById("actVal").textContent = actDraft.minutes+" min";
+  }
+  else if(a==="startPause"){ meta.pause = { active:true, since:todayKey() }; save(LS.meta, meta); setTab("today"); }
+  else if(a==="endPause"){ meta.pause = { active:false }; meta.easeIn = true; save(LS.meta, meta); setTab("today"); }
+  else if(a==="openQuarter"){ renderQuarter(Number(act.dataset.q)); }
+  else if(a==="backReview"){ setTab("review"); }
+  else if(a==="printQ"){ window.print(); }
+  else if(a==="saveQStart"){ const v=document.getElementById("qStart").value; if(v){ settings.quarterStart=v; save(LS.settings,settings); render(); } }
+  else if(a==="saveSubs"){
+    const errEl=document.getElementById("subsErr"), okEl=document.getElementById("subsOk");
+    try{
+      const arr = JSON.parse(document.getElementById("setSubs").value);
+      if(!Array.isArray(arr) || arr.some(s=>!s || typeof s.region!=="string" || typeof s.exercise!=="string" || typeof s.sub!=="string"))
+        throw new Error("Must be an array of {region, exercise, sub} — sub may be an empty string to drop the exercise.");
+      settings.subs = arr; save(LS.settings, settings);
+      okEl.hidden=false; errEl.hidden=true;
+    }catch(ex){ errEl.hidden=false; errEl.textContent=ex.message; okEl.hidden=true; }
+  }
+  else if(a==="restoreSubs"){ settings.subs = JSON.parse(JSON.stringify(DEFAULT_SUBS)); save(LS.settings, settings); render(); }
   else if(a==="editToday"){ draft=null; const e=entries[todayKey()]; draft=blankDraft(); if(e&&e.checkin){Object.assign(draft,JSON.parse(JSON.stringify(e.checkin))); if(e.measurements)draft.meas={...e.measurements};} renderCheckin(); }
   else if(a==="goReview"){ setTab("review"); }
   else if(a==="saveEvening"){ saveEvening(); }
@@ -1183,7 +1627,7 @@ document.addEventListener("click", ev=>{
   else if(a==="wipe"){
     if(confirm("Delete every entry and setting on this device? Export first if you have not.")){
       localStorage.removeItem(LS.entries); localStorage.removeItem(LS.settings); localStorage.removeItem(LS.meta);
-      settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS)); entries={}; meta={lastExport:null,photoAckMonth:null,deload:null};
+      settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS)); entries={}; meta={lastExport:null,photoAckMonth:null,deload:null,pause:{active:false},easeIn:false};
       draft=null; setupState=null; render();
     }
   }
